@@ -14,7 +14,9 @@ This project is not a generic attractive AI model generator. It is designed to t
 
 **Phase 1 is implemented:** historical database + research engine.
 
-Phase 1 focuses on accuracy, structure, and content reasoning before any expensive image or video generation.
+**Phase 2 is implemented:** character bible + visual identity system.
+
+The project now has the research foundation and the visual consistency layer needed before expensive image or video generation.
 
 ## Implemented in Phase 1
 
@@ -36,6 +38,17 @@ Phase 1 focuses on accuracy, structure, and content reasoning before any expensi
 - Adult-only guardrails.
 - Quote safety guardrails.
 - AI reconstruction disclosure metadata.
+
+## Implemented in Phase 2
+
+- Character visual identity profiles.
+- Consistent face, silhouette, hair, palette, lighting, and camera rules.
+- Tasteful visual appeal constraints.
+- Approved wardrobe options.
+- Approved environment options.
+- Provider-neutral visual prompt templates.
+- Visual identity audits for consistency, historical fit, appeal, and safety.
+- Adult-only/non-explicit prompt safety checks.
 
 ## Seed historical subjects
 
@@ -62,7 +75,7 @@ The local `data/` directory is intentionally ignored by git.
 ## Development phases
 
 1. Historical database + research engine — complete.
-2. Character Bible + visual identity system.
+2. Character Bible + visual identity system — complete.
 3. Content idea + hook + script engine expansion.
 4. Image generation.
 5. Video provider abstraction.

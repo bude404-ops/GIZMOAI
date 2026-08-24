@@ -4,7 +4,7 @@ Migrations are idempotent and additive. This phase uses stdlib sqlite3 so the
 research foundation can run locally without external services.
 """
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DDL = [
     """
@@ -193,6 +193,94 @@ DDL = [
       CHECK (status IN ('IDEA','RANKED','APPROVED_FOR_GENERATION','REJECTED','NEEDS_REVIEW'))
     )
     """,
+
+    """
+    CREATE TABLE IF NOT EXISTS visual_identity_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      character_bible_id INTEGER NOT NULL UNIQUE,
+      identity_anchor TEXT NOT NULL,
+      face_signature TEXT NOT NULL,
+      silhouette_signature TEXT NOT NULL,
+      skin_texture_notes TEXT NOT NULL DEFAULT '',
+      hair_signature TEXT NOT NULL DEFAULT '',
+      palette TEXT NOT NULL DEFAULT '[]',
+      camera_rules TEXT NOT NULL DEFAULT '[]',
+      lighting_rules TEXT NOT NULL DEFAULT '[]',
+      negative_prompt_rules TEXT NOT NULL DEFAULT '[]',
+      reconstruction_disclosure TEXT NOT NULL DEFAULT 'AI historical reconstruction',
+      consistency_score REAL NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (character_bible_id) REFERENCES character_bibles(id) ON DELETE CASCADE,
+      CHECK (consistency_score >= 0 AND consistency_score <= 100)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS wardrobe_options (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      character_bible_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      historical_basis TEXT NOT NULL,
+      appeal_strategy TEXT NOT NULL,
+      modesty_level TEXT NOT NULL DEFAULT 'TASTEFUL',
+      accuracy_confidence TEXT NOT NULL DEFAULT 'MEDIUM',
+      approved BOOLEAN NOT NULL DEFAULT 1,
+      usage_notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (character_bible_id) REFERENCES character_bibles(id) ON DELETE CASCADE,
+      CHECK (modesty_level IN ('REGAL','TASTEFUL','PRACTICAL','CEREMONIAL')),
+      CHECK (accuracy_confidence IN ('HIGH','MEDIUM','LOW'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS environment_options (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      character_bible_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      historical_basis TEXT NOT NULL,
+      visual_mood TEXT NOT NULL,
+      accuracy_confidence TEXT NOT NULL DEFAULT 'MEDIUM',
+      approved BOOLEAN NOT NULL DEFAULT 1,
+      usage_notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (character_bible_id) REFERENCES character_bibles(id) ON DELETE CASCADE,
+      CHECK (accuracy_confidence IN ('HIGH','MEDIUM','LOW'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS visual_prompt_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      character_bible_id INTEGER NOT NULL,
+      template_name TEXT NOT NULL,
+      provider_family TEXT NOT NULL DEFAULT 'GENERIC_IMAGE',
+      prompt_text TEXT NOT NULL,
+      negative_prompt TEXT NOT NULL DEFAULT '',
+      aspect_ratio TEXT NOT NULL DEFAULT '9:16',
+      duration_seconds INTEGER,
+      disclosure_text TEXT NOT NULL DEFAULT 'AI historical reconstruction',
+      safety_notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (character_bible_id) REFERENCES character_bibles(id) ON DELETE CASCADE,
+      CHECK (provider_family IN ('GENERIC_IMAGE','GENERIC_VIDEO','REFERENCE_IMAGE','IMAGE_TO_VIDEO')),
+      CHECK (aspect_ratio IN ('9:16','1:1','16:9'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS visual_identity_audits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      character_bible_id INTEGER NOT NULL,
+      audit_type TEXT NOT NULL,
+      score REAL NOT NULL DEFAULT 0,
+      passed BOOLEAN NOT NULL DEFAULT 0,
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (character_bible_id) REFERENCES character_bibles(id) ON DELETE CASCADE,
+      CHECK (audit_type IN ('CONSISTENCY','HISTORICAL_FIT','VISUAL_APPEAL','SAFETY')),
+      CHECK (score >= 0 AND score <= 100)
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS historical_accuracy_checks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,4 +312,8 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_facts_classification ON historical_facts(classification)",
     "CREATE INDEX IF NOT EXISTS idx_ideas_score ON content_ideas(overall_prediction DESC)",
     "CREATE INDEX IF NOT EXISTS idx_accuracy_review ON historical_accuracy_checks(review_required)",
+    "CREATE INDEX IF NOT EXISTS idx_visual_identity_bible ON visual_identity_profiles(character_bible_id)",
+    "CREATE INDEX IF NOT EXISTS idx_wardrobe_bible ON wardrobe_options(character_bible_id)",
+    "CREATE INDEX IF NOT EXISTS idx_environment_bible ON environment_options(character_bible_id)",
+    "CREATE INDEX IF NOT EXISTS idx_prompt_bible ON visual_prompt_templates(character_bible_id)",
 ]

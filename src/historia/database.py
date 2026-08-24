@@ -151,7 +151,7 @@ class HistoriaDatabase:
         return int(cur.lastrowid)
 
     def add_character_bible(self, figure_id: int, bible: dict[str, Any]) -> int:
-        cur = self.conn.execute(
+        self.conn.execute(
             """
             INSERT OR REPLACE INTO character_bibles (
               figure_id, name, classification, era, age_status, personality, appearance,
@@ -167,6 +167,111 @@ class HistoriaDatabase:
                 int(bible.get("confidence_level", 7)), bible.get("humor", ""), bible.get("speaking_style", ""), bible.get("interests", ""),
                 bible.get("historical_knowledge", ""), json.dumps(bible.get("approved_outfits", [])), json.dumps(bible.get("approved_environments", [])), json.dumps([]),
             ),
+        )
+        self.conn.commit()
+        row = self.one("SELECT id FROM character_bibles WHERE figure_id=?", (figure_id,))
+        return int(row["id"])
+
+    def add_visual_identity_profile(self, character_bible_id: int, profile: dict[str, Any]) -> int:
+        self.conn.execute(
+            """
+            INSERT INTO visual_identity_profiles (
+              character_bible_id, identity_anchor, face_signature, silhouette_signature,
+              skin_texture_notes, hair_signature, palette, camera_rules, lighting_rules,
+              negative_prompt_rules, reconstruction_disclosure, consistency_score, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(character_bible_id) DO UPDATE SET
+              identity_anchor=excluded.identity_anchor,
+              face_signature=excluded.face_signature,
+              silhouette_signature=excluded.silhouette_signature,
+              skin_texture_notes=excluded.skin_texture_notes,
+              hair_signature=excluded.hair_signature,
+              palette=excluded.palette,
+              camera_rules=excluded.camera_rules,
+              lighting_rules=excluded.lighting_rules,
+              negative_prompt_rules=excluded.negative_prompt_rules,
+              reconstruction_disclosure=excluded.reconstruction_disclosure,
+              consistency_score=excluded.consistency_score,
+              updated_at=CURRENT_TIMESTAMP
+            """,
+            (
+                character_bible_id,
+                profile["identity_anchor"],
+                profile["face_signature"],
+                profile["silhouette_signature"],
+                profile.get("skin_texture_notes", ""),
+                profile.get("hair_signature", ""),
+                json.dumps(profile.get("palette", [])),
+                json.dumps(profile.get("camera_rules", [])),
+                json.dumps(profile.get("lighting_rules", [])),
+                json.dumps(profile.get("negative_prompt_rules", [])),
+                profile.get("reconstruction_disclosure", "AI historical reconstruction"),
+                float(profile.get("consistency_score", 0)),
+            ),
+        )
+        self.conn.commit()
+        row = self.one("SELECT id FROM visual_identity_profiles WHERE character_bible_id=?", (character_bible_id,))
+        return int(row["id"])
+
+    def add_wardrobe_option(self, character_bible_id: int, item: dict[str, Any]) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO wardrobe_options (
+              character_bible_id, name, description, historical_basis, appeal_strategy,
+              modesty_level, accuracy_confidence, approved, usage_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                character_bible_id, item["name"], item["description"], item["historical_basis"],
+                item["appeal_strategy"], item.get("modesty_level", "TASTEFUL"),
+                item.get("accuracy_confidence", "MEDIUM"), bool(item.get("approved", True)), item.get("usage_notes", ""),
+            ),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def add_environment_option(self, character_bible_id: int, item: dict[str, Any]) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO environment_options (
+              character_bible_id, name, description, historical_basis, visual_mood,
+              accuracy_confidence, approved, usage_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                character_bible_id, item["name"], item["description"], item["historical_basis"],
+                item["visual_mood"], item.get("accuracy_confidence", "MEDIUM"),
+                bool(item.get("approved", True)), item.get("usage_notes", ""),
+            ),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def add_visual_prompt_template(self, character_bible_id: int, item: dict[str, Any]) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO visual_prompt_templates (
+              character_bible_id, template_name, provider_family, prompt_text, negative_prompt,
+              aspect_ratio, duration_seconds, disclosure_text, safety_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                character_bible_id, item["template_name"], item.get("provider_family", "GENERIC_IMAGE"),
+                item["prompt_text"], item.get("negative_prompt", ""), item.get("aspect_ratio", "9:16"),
+                item.get("duration_seconds"), item.get("disclosure_text", "AI historical reconstruction"),
+                item.get("safety_notes", ""),
+            ),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    def add_visual_identity_audit(self, character_bible_id: int, audit: dict[str, Any]) -> int:
+        cur = self.conn.execute(
+            """
+            INSERT INTO visual_identity_audits (character_bible_id, audit_type, score, passed, notes)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (character_bible_id, audit["audit_type"], float(audit["score"]), bool(audit.get("passed", False)), audit.get("notes", "")),
         )
         self.conn.commit()
         return int(cur.lastrowid)
