@@ -14,7 +14,7 @@ GIZMO is organized as modular systems, not independent chatbots.
 8. Project Memory — `gizmo/memory`
 9. Knowledge/Research System — reserved module
 10. Tool Registry — `gizmo/tools`
-11. GitHub Integration — planned next expansion; repo remains source of truth
+11. GitHub Integration — Phase 1 workspace loop with repository inspection, branch-per-task planning, PR plan artifacts, and policy-gated branch execution
 12. Autonomous Execution Engine — bootstrap orchestrator loop
 13. Sandbox System — reserved runtime boundary and factory sandbox policy
 14. Testing and QA System — pytest + self-test

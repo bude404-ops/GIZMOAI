@@ -8,7 +8,9 @@ It is not Base44. It is designed as an organization: an executive orchestrator, 
 
 **Bootstrap v0 is implemented.**
 
-This is the smallest functional architecture: enough to initialize the organization, register the 27 core agents, create and execute tasks, store searchable memory, run a harmless demo project, reuse memory in a second task, detect capabilities, and produce auditable reports.
+**Phase 1 GitHub Workspace Loop is implemented.**
+
+The system can initialize the organization, register the 27 core agents, create and execute tasks, store searchable memory, run harmless demo projects, reuse memory, detect capabilities, inspect GitHub workspace state, create branch-per-task plans, prepare PR plan artifacts, and produce auditable reports.
 
 ## Design rule
 
@@ -21,6 +23,7 @@ No giant untested codebase. No fabricated external capability. Destructive or pr
 ```bash
 python -m gizmo.core.cli bootstrap --workspace .gizmo_runtime
 python -m gizmo.core.cli self-test --workspace .gizmo_runtime
+python -m gizmo.core.cli github-demo --workspace .gizmo_runtime
 python -m gizmo.core.cli status --workspace .gizmo_runtime
 ```
 
