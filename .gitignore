@@ -1,7 +1,16 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.coverage
+.env
+.env.*
+!.env.example
 *.db
 *.sqlite
 *.sqlite3
-data/
+.gizmo_runtime/
+/data/
+artifacts/runtime/
+gizmo/artifacts/runtime/
+gizmo/projects/generated/
+gizmo/sandbox/runtime/

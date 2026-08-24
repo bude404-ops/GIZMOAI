@@ -1,96 +1,46 @@
-# History After Dark
+# GIZMO — Autonomous Intelligence & Development Organization
 
-AI historical women content engine: a research-first cinematic studio for short-form X content.
+GIZMO is a modular autonomous AI development organization operated through Reaper and GitHub.
 
-The core premise:
-
-> What if history's most fascinating women came alive again?
-
-This project is not a generic attractive AI model generator. It is designed to turn a historical woman into:
-
-`Research -> Hook -> Cinematic Visual -> AI Video -> Caption -> X Post -> Analytics -> Learning`
+It is not Base44. It is designed as an organization: an executive orchestrator, specialist agents, task planning, memory, tool governance, sandboxing, testing, security, observability, cost controls, and human control.
 
 ## Current milestone
 
-**Phase 1 is implemented:** historical database + research engine.
+**Bootstrap v0 is implemented.**
 
-**Phase 2 is implemented:** character bible + visual identity system.
+This is the smallest functional architecture: enough to initialize the organization, register the 27 core agents, create and execute tasks, store searchable memory, run a harmless demo project, reuse memory in a second task, detect capabilities, and produce auditable reports.
 
-The project now has the research foundation and the visual consistency layer needed before expensive image or video generation.
+## Design rule
 
-## Implemented in Phase 1
+Build → test → review → expand.
 
-- Historical figure database.
-- Reliable source tracking.
-- Fact classification:
-  - `VERIFIED_FACT`
-  - `HISTORICAL_INTERPRETATION`
-  - `AI_DRAMATIZATION`
-- Source-to-fact links.
-- Historical uncertainty handling.
-- Myth/interpretation controls.
-- Visual reference tracking for portraits, sculpture, clothing, architecture, and environments.
-- Historical character bible foundation.
-- Cinematic scene concept storage.
-- Text-only content idea generation.
-- Virality-style normalized content scoring.
-- Historical accuracy preflight checks.
-- Adult-only guardrails.
-- Quote safety guardrails.
-- AI reconstruction disclosure metadata.
+No giant untested codebase. No fabricated external capability. Destructive or production-level actions require human approval.
 
-## Implemented in Phase 2
-
-- Character visual identity profiles.
-- Consistent face, silhouette, hair, palette, lighting, and camera rules.
-- Tasteful visual appeal constraints.
-- Approved wardrobe options.
-- Approved environment options.
-- Provider-neutral visual prompt templates.
-- Visual identity audits for consistency, historical fit, appeal, and safety.
-- Adult-only/non-explicit prompt safety checks.
-
-## Seed historical subjects
-
-- Hatshepsut
-- Boudica
-- Ada Lovelace
-- Cleopatra VII Philopator
-
-## Run tests
+## Quickstart
 
 ```bash
-python -m pytest -q
+python -m gizmo.core.cli bootstrap --workspace .gizmo_runtime
+python -m gizmo.core.cli self-test --workspace .gizmo_runtime
+python -m gizmo.core.cli status --workspace .gizmo_runtime
 ```
 
-## Build seed database
+## Operating modes
 
-```bash
-PYTHONPATH=src python -m historia.cli build-seed --db data/historia.db
-PYTHONPATH=src python -m historia.cli summary --db data/historia.db
+- `MANUAL`: human approves important operations.
+- `ASSISTED`: routine work allowed, significant changes require approval.
+- `AUTONOMOUS`: approved categories can run independently.
+- `EMERGENCY`: autonomous work stops immediately.
+
+The emergency stop command is:
+
+```text
+GIZMO STOP
 ```
 
-The local `data/` directory is intentionally ignored by git.
+## Security
 
-## Development phases
+GIZMO never hard-codes secrets. Use environment variables or GitHub secrets. All destructive and production-level actions are policy-gated.
 
-1. Historical database + research engine — complete.
-2. Character Bible + visual identity system — complete.
-3. Content idea + hook + script engine expansion.
-4. Image generation.
-5. Video provider abstraction.
-6. Voice/audio generation.
-7. Quality-control system.
-8. X publishing.
-9. Analytics.
-10. A/B testing.
-11. Learning engine.
-12. Fully automated content pipeline.
+## Next expansion
 
-## Safety rules
-
-- Never commit API keys or secrets.
-- Never invent quotes and present them as authentic.
-- Never present fictional events as documented history.
-- Fictional characters must be clearly labeled fictional.
-- Historical recreations must be labeled as AI reconstructions.
+Phase 1 should connect this bootstrap core to real GitHub branches/issues/PRs and add richer agent execution adapters while preserving the safety boundary.

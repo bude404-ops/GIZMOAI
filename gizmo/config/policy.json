@@ -1,0 +1,8 @@
+{
+  "default_mode": "MANUAL",
+  "max_task_retries": 2,
+  "destructive_actions_require_approval": true,
+  "production_actions_require_approval": true,
+  "emergency_stop_phrase": "GIZMO STOP",
+  "secrets_policy": "Use environment variables or GitHub secrets only; never hard-code credentials."
+}
