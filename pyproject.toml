@@ -1,0 +1,10 @@
+[project]
+name = "historia-content-engine"
+version = "0.1.0"
+description = "Phase 1 research and historical database foundation for Historia."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
