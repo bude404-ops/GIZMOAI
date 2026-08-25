@@ -16,6 +16,7 @@ from gizmo.memory.memory_system import MemorySystem
 from gizmo.monitoring.cost_manager import CostManager
 from gizmo.monitoring.logger import AuditLogger
 from gizmo.projects.project_generator import ProjectGenerator
+from gizmo.security.approval_policy import ApprovalPolicyEngine
 from gizmo.security.security_system import SecuritySystem
 from gizmo.tasks.task_engine import TaskEngine
 from gizmo.tools.tool_registry import ToolRegistry
@@ -45,6 +46,7 @@ class GizmoOrchestrator:
             repo_path=Path.cwd(),
         )
         self.github_api = GitHubApiAdapter(self.store, self.security, self.audit)
+        self.policy = ApprovalPolicyEngine(self.store, self.audit)
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -105,6 +107,20 @@ class GizmoOrchestrator:
         self.audit.log(task.assigned_agent, task.id, "execute_task", "completed", task_result=task.result)
         return task
 
+    def policy_demo(self, project_name: str = "gizmo-policy-demo") -> dict[str, Any]:
+        """Exercise approval gates without authorizing production/destructive work."""
+        self.policy.set_project_mode(project_name, OperatingMode.ASSISTED)
+        safe = self.policy.evaluate_action(project_name, "plan", "agent-01")
+        merge = self.policy.gate_merge(project_name, {"tests": True, "secret_scan": True, "review": True})
+        deploy_block = self.policy.gate_deploy(project_name, {"tests": True, "secret_scan": True, "security_review": False, "quality_review": True})
+        status = self.policy.export_status()
+        return {
+            "safe_decision": safe.to_dict(),
+            "merge_decision": merge.to_dict(),
+            "deploy_decision": deploy_block.to_dict(),
+            "policy_status": status,
+        }
+
     def github_api_demo(self, project_name: str = "gizmo-github-api-demo", execute: bool = False) -> dict[str, Any]:
         """Prepare GitHub issue/PR/API sync actions with approval gates."""
         self.security.set_mode(OperatingMode.ASSISTED)
@@ -160,6 +176,7 @@ class GizmoOrchestrator:
         second = self.run_demo_project("demo-web-app-two", "Build a second small web application using prior lessons")
         github_demo = self.github_workspace_demo(execute_git=False)
         github_api_demo = self.github_api_demo(project_name="gizmo-github-api-self-test", execute=False)
+        policy_demo = self.policy_demo(project_name="gizmo-policy-self-test")
         memories = self.memory.search("dependency-free testable web app", limit=10)
         github_memories = self.memory.search("GitHub task workflow", limit=5)
         result = {
@@ -168,9 +185,10 @@ class GizmoOrchestrator:
             "second_demo": second,
             "github_demo": github_demo,
             "github_api_demo": github_api_demo,
+            "policy_demo": policy_demo,
             "memory_matches": len(memories),
             "github_memory_matches": len(github_memories),
-            "passed": boot["agents"] == 27 and len(memories) >= 2 and len(github_memories) >= 1 and github_api_demo["api_status"]["api_actions"] >= 3,
+            "passed": boot["agents"] == 27 and len(memories) >= 2 and len(github_memories) >= 1 and github_api_demo["api_status"]["api_actions"] >= 3 and policy_demo["policy_status"]["pending_approvals"] >= 1,
         }
         self.store.write(result, "monitoring", "self_test_report.json")
         self.audit.log("agent-27", None, "self_test", "passed" if result["passed"] else "failed", report=result)
@@ -188,5 +206,6 @@ class GizmoOrchestrator:
             "audit_events": len(audit),
             "github": self.github.export_status(),
             "github_api": self.github_api.export_status(),
+            "policy": self.policy.export_status(),
             "capabilities": self.store.read("config", "capabilities.json", default={}),
         }
