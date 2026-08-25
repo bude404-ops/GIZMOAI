@@ -10,6 +10,7 @@ from gizmo.agent_factory.factory import AgentFactory
 from gizmo.communication.message_bus import MessageBus
 from gizmo.core.models import MemoryKind, OperatingMode, StructuredMessage, Task, TaskStatus
 from gizmo.core.store import JsonStore
+from gizmo.github.api_adapter import GitHubApiAdapter
 from gizmo.github.workspace import GitHubWorkspaceLoop
 from gizmo.memory.memory_system import MemorySystem
 from gizmo.monitoring.cost_manager import CostManager
@@ -43,6 +44,7 @@ class GizmoOrchestrator:
             self.audit,
             repo_path=Path.cwd(),
         )
+        self.github_api = GitHubApiAdapter(self.store, self.security, self.audit)
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -103,6 +105,27 @@ class GizmoOrchestrator:
         self.audit.log(task.assigned_agent, task.id, "execute_task", "completed", task_result=task.result)
         return task
 
+    def github_api_demo(self, project_name: str = "gizmo-github-api-demo", execute: bool = False) -> dict[str, Any]:
+        """Prepare GitHub issue/PR/API sync actions with approval gates."""
+        self.security.set_mode(OperatingMode.ASSISTED)
+        workspace = self.github_workspace_demo(project_name=project_name, execute_git=False)
+        repo = workspace["repository"]
+        task = self.tasks.load(workspace["task"]["id"])
+        pr_plan = workspace["workspace_run"]["pr_plan"]
+        if not repo.get("owner") or not repo.get("repo"):
+            return {"blocked": True, "reason": "GitHub remote not detected", "workspace": workspace}
+        issue_action = self.github_api.create_issue_from_task(repo["owner"], repo["repo"], task, execute=execute)
+        pr_action = self.github_api.open_pull_request_from_plan(repo["owner"], repo["repo"], pr_plan, execute=execute)
+        ci_action = self.github_api.read_workflow_runs(repo["owner"], repo["repo"], branch=pr_plan["branch"], execute=execute)
+        status = self.github_api.export_status()
+        return {
+            "workspace": workspace,
+            "issue_action": issue_action.to_dict(),
+            "pr_action": pr_action.to_dict(),
+            "ci_action": ci_action.to_dict(),
+            "api_status": status,
+        }
+
     def github_workspace_demo(self, project_name: str = "gizmo-github-demo", execute_git: bool = False) -> dict[str, Any]:
         """Run a safe GitHub workspace loop demonstration.
 
@@ -136,6 +159,7 @@ class GizmoOrchestrator:
         first = self.run_demo_project("demo-web-app-one", "Build a small web application")
         second = self.run_demo_project("demo-web-app-two", "Build a second small web application using prior lessons")
         github_demo = self.github_workspace_demo(execute_git=False)
+        github_api_demo = self.github_api_demo(project_name="gizmo-github-api-self-test", execute=False)
         memories = self.memory.search("dependency-free testable web app", limit=10)
         github_memories = self.memory.search("GitHub task workflow", limit=5)
         result = {
@@ -143,9 +167,10 @@ class GizmoOrchestrator:
             "first_demo": first,
             "second_demo": second,
             "github_demo": github_demo,
+            "github_api_demo": github_api_demo,
             "memory_matches": len(memories),
             "github_memory_matches": len(github_memories),
-            "passed": boot["agents"] == 27 and len(memories) >= 2 and len(github_memories) >= 1,
+            "passed": boot["agents"] == 27 and len(memories) >= 2 and len(github_memories) >= 1 and github_api_demo["api_status"]["api_actions"] >= 3,
         }
         self.store.write(result, "monitoring", "self_test_report.json")
         self.audit.log("agent-27", None, "self_test", "passed" if result["passed"] else "failed", report=result)
@@ -162,5 +187,6 @@ class GizmoOrchestrator:
             "completed_tasks": sum(1 for task in tasks if task["status"] == "COMPLETED"),
             "audit_events": len(audit),
             "github": self.github.export_status(),
+            "github_api": self.github_api.export_status(),
             "capabilities": self.store.read("config", "capabilities.json", default={}),
         }
