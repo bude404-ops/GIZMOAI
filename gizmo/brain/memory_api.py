@@ -91,6 +91,18 @@ class SecondBrain:
     def detect_knowledge_gaps(self, task: str, *, project: str = "Gizmo") -> list[dict[str, Any]]:
         return self.gap_detector.detect(task, project=project)
 
+    def rebuild_vault_indexes(self) -> dict[str, Any]:
+        return self.vault.rebuild_indexes(self._all_memories())
+
+    def record_session_note(self, title: str, summary: str, memory_ids: list[str] | None = None) -> str:
+        memories = [self.get(memory_id) for memory_id in (memory_ids or []) if self.exists(memory_id)]
+        return self.vault.write_session_note(title, summary, memories).name
+
+    def export_graph(self) -> dict[str, Any]:
+        report = self.vault.rebuild_indexes(self._all_memories())
+        graph_path = self.vault.root / "graph" / "knowledge-graph.json"
+        return {"report": report, "graph": __import__("json").loads(graph_path.read_text())}
+
     def get_related_memory(self, memory_id: str) -> list[BrainMemory]:
         memory = self.get(memory_id)
         ids = {rel.target_id for rel in memory.relationships}
@@ -185,6 +197,10 @@ class SecondBrain:
             "hybrid_retrieval": True,
             "context_builder": True,
             "knowledge_gap_detection": True,
+            "vault_indexes": True,
+            "graph_export": True,
+            "session_notes": True,
+            "revision_views": True,
         }
 
     def _persist(self, memory: BrainMemory) -> None:

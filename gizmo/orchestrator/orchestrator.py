@@ -173,6 +173,59 @@ class GizmoOrchestrator:
         self.audit.log("agent-26", None, "brain.phase2", "passed" if result["ready"] else "failed", report=result)
         return result
 
+    def brain_phase3_demo(self) -> dict[str, Any]:
+        """Exercise Obsidian vault indexes, graph export, backlinks, revisions, and session notes."""
+        phase2 = self.brain_phase2_demo()
+        decision = self.brain_core.record_decision(
+            "Creator decisions remain highest authority",
+            "Creator-provided decisions and constraints cannot be silently overwritten by autonomous agents.",
+            source="creator",
+            source_agent="reaper",
+            importance=10,
+            confidence=1.0,
+            tags=["creator", "authority", "safety"],
+            entities=["Creator", "Reaper", "Second Brain"],
+        )
+        lesson = self.brain_core.record_lesson(
+            "Vault must be useful without the application",
+            "Markdown, frontmatter, backlinks, indexes, graph exports, and session notes keep the Brain portable and inspectable.",
+            source="phase-3",
+            source_agent="agent-26",
+            importance=8,
+            confidence=0.92,
+            tags=["obsidian", "vault", "portability"],
+            entities=["Second Brain", "Obsidian"],
+        )
+        self.brain_core.link_memories(decision.id, "affects", lesson.id, confidence=0.85)
+        self.brain_core.update_memory(lesson.id, content=lesson.content + " Revision tracking preserves prior Markdown before updates.")
+        session_note = self.brain_core.record_session_note("Phase 3 vault rebuild", "Indexes, graph export, backlinks, quality report, and revision views generated.", [decision.id, lesson.id])
+        vault_report = self.brain_core.rebuild_vault_indexes()
+        graph = self.brain_core.export_graph()
+        root = self.brain_core.vault.root
+        required = [
+            root / "README.md",
+            root / "indexes" / "Memory Index.md",
+            root / "indexes" / "Project Index.md",
+            root / "indexes" / "Agent Index.md",
+            root / "indexes" / "Quality Report.md",
+            root / "graph" / "Knowledge Graph.md",
+            root / "graph" / "knowledge-graph.json",
+            root / "graph" / "Backlinks.md",
+            root / "graph" / "backlinks.json",
+            root / "sessions" / session_note,
+        ]
+        result = {
+            "ready": phase2["ready"] and all(path.exists() for path in required) and graph["report"]["graph_nodes"] > 0,
+            "phase2_ready": phase2["ready"],
+            "vault_report": vault_report,
+            "graph_nodes": graph["report"]["graph_nodes"],
+            "graph_edges": graph["report"]["graph_edges"],
+            "required_files": [path.name for path in required],
+        }
+        self.store.write(result, "brain", "phase3_report.json")
+        self.audit.log("agent-26", None, "brain.phase3", "passed" if result["ready"] else "failed", report=result)
+        return result
+
     def second_brain_demo(self) -> dict[str, Any]:
         """Exercise GitHub-side second brain command flow."""
         self.bootstrap()

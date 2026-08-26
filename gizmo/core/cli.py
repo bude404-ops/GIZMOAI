@@ -16,7 +16,7 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     args = parser.parse_args()
@@ -40,6 +40,8 @@ def main() -> None:
         emit(orchestrator.brain_initialization_demo())
     elif args.command == "brain-phase2":
         emit(orchestrator.brain_phase2_demo())
+    elif args.command == "brain-phase3":
+        emit(orchestrator.brain_phase3_demo())
     elif args.command == "status":
         emit(orchestrator.status())
     elif args.command == "stop":
