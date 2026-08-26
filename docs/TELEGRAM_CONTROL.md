@@ -102,3 +102,9 @@ Telegram can now trigger and monitor a safe autonomous knowledge cycle.
 - `/status` reports the latest knowledge cycle state.
 
 The cycle creates structured Second Brain research, lessons, evaluations, follow-up learning tasks, vault indexes, and a Telegram-ready summary. It does not store secrets or bypass approval gates.
+
+## Viewing GIZMO from Telegram
+
+Open the bot and send `/status`, `/memory autonomous learning`, `/tasks`, or `/agents`.
+
+Inbound command replies are handled by `GIZMO Telegram Command Poller`, which runs every five minutes and can also be manually dispatched. The poller reads pending Telegram updates, routes only allowlisted admin commands, sends the result back to the same chat, and acknowledges the processed update offset.

@@ -66,3 +66,19 @@ GitHub workflow:
 - manual dispatch input: `enable=true`
 
 The workflow sends a short Telegram summary when Telegram secrets are present.
+
+## Telegram command poller
+
+Manual one-shot command processing:
+
+```bash
+python -m gizmo.core.cli telegram-poll-once --workspace .gizmo_runtime/telegram-poller
+```
+
+GitHub workflow:
+
+- `GIZMO Telegram Command Poller`
+- schedule: every five minutes
+- action: polls Telegram once, routes pending updates, sends replies, acknowledges processed updates
+
+This is the path that makes `/status` and `/memory` visible inside the Telegram bot.

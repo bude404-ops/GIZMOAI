@@ -1,0 +1,42 @@
+name: GIZMO Telegram Command Poller
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/5 * * * *'
+
+concurrency:
+  group: gizmo-telegram-command-poller
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  poll-telegram:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
+      REAPER_AUTH_SECRET: ${{ secrets.REAPER_AUTH_SECRET }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GIZMO_NOTIFICATION_MIN_PRIORITY: LOW
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install GIZMO
+        run: python -m pip install -e . pytest
+      - name: Poll Telegram once and reply
+        run: |
+          mkdir -p .gizmo_runtime/action-results
+          python -m gizmo.core.cli telegram-poll-once --workspace .gizmo_runtime/telegram-poller > .gizmo_runtime/action-results/telegram-poll-once.json
+      - name: Verify safety
+        run: python scripts/scan_secrets.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-poll-once-result
+          path: .gizmo_runtime/action-results/telegram-poll-once.json
