@@ -82,3 +82,19 @@ GitHub workflow:
 - action: polls Telegram once, routes pending updates, sends replies, acknowledges processed updates
 
 This is the path that makes `/status` and `/memory` visible inside the Telegram bot.
+
+## Plain English Telegram checks
+
+After deployment, verify these from Telegram without slashes:
+
+```text
+status
+what did you learn?
+begin learning
+agents
+tasks
+remember that Telegram should answer simple English terms
+search memory for simple English terms
+```
+
+The poller treats these exactly like slash commands after admin authorization.

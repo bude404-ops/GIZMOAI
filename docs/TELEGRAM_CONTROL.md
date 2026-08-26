@@ -108,3 +108,24 @@ The cycle creates structured Second Brain research, lessons, evaluations, follow
 Open the bot and send `/status`, `/memory autonomous learning`, `/tasks`, or `/agents`.
 
 Inbound command replies are handled by `GIZMO Telegram Command Poller`, which runs every five minutes and can also be manually dispatched. The poller reads pending Telegram updates, routes only allowlisted admin commands, sends the result back to the same chat, and acknowledges the processed update offset.
+
+## Plain English Telegram controls
+
+Slash commands are no longer required for the common operator flow. The router accepts short English phrases and maps them to the same secured handlers.
+
+Examples:
+
+- `status` → GIZMO status
+- `help` or `commands` → help menu
+- `agents` → agent registry
+- `tasks` → task list
+- `logs` → latest logs
+- `what did you learn?` → autonomous learning memory search
+- `begin learning` or `learn now` → run one autonomous knowledge cycle
+- `turn on learning` → approval-gated autonomous enable
+- `turn off learning` → disable autonomous mode
+- `remember that <text>` → safe explicit memory write
+- `search memory for <query>` → Second Brain search
+- `build <thing>` → create a GIZMO task
+
+Sensitive English phrases still hit the same gates. `turn on learning`, `deploy ...`, `release ...`, `stop`, and `stop everything` remain approval/safety-bound.

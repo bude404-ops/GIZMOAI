@@ -36,7 +36,71 @@ class IntentDetector:
             command = parts[0].lower()
             rest = parts[1] if len(parts) > 1 else ""
             return self._from_command(command, rest, raw)
+        alias = self._from_plain_english_alias(raw, lowered)
+        if alias:
+            return alias
         return self._from_natural_language(raw, lowered)
+
+    def _from_plain_english_alias(self, raw: str, lowered: str) -> TelegramIntent | None:
+        compact = " ".join(lowered.replace("?", " ").replace("!", " ").split())
+        exact: dict[str, tuple[str, str, dict[str, Any], bool, float]] = {
+            "hi": ("start", "Open Telegram control center", {}, False, 0.98),
+            "hello": ("start", "Open Telegram control center", {}, False, 0.98),
+            "hey": ("start", "Open Telegram control center", {}, False, 0.98),
+            "start": ("start", "Open Telegram control center", {}, False, 0.98),
+            "help": ("help", "Show available commands", {}, False, 0.98),
+            "commands": ("help", "Show available commands", {}, False, 0.96),
+            "menu": ("help", "Show available commands", {}, False, 0.94),
+            "status": ("status", "Show Gizmo status", {}, False, 0.99),
+            "check status": ("status", "Show Gizmo status", {}, False, 0.98),
+            "what is running": ("status", "Show Gizmo status", {}, False, 0.96),
+            "what's running": ("status", "Show Gizmo status", {}, False, 0.96),
+            "agents": ("agents", "Show agent registry", {}, False, 0.98),
+            "show agents": ("agents", "Show agent registry", {}, False, 0.97),
+            "tasks": ("tasks", "Show tasks", {}, False, 0.98),
+            "show tasks": ("tasks", "Show tasks", {}, False, 0.97),
+            "projects": ("projects", "Show projects", {}, False, 0.96),
+            "logs": ("logs", "latest", {"filter": "latest"}, False, 0.96),
+            "show logs": ("logs", "latest", {"filter": "latest"}, False, 0.96),
+            "memory": ("memory", "Gizmo", {"query": "Gizmo"}, False, 0.94),
+            "what did you learn": ("memory", "autonomous learning", {"query": "autonomous learning"}, False, 0.98),
+            "what have you learned": ("memory", "autonomous learning", {"query": "autonomous learning"}, False, 0.98),
+            "show what you learned": ("memory", "autonomous learning", {"query": "autonomous learning"}, False, 0.97),
+            "start learning": ("learn", "autonomous cycle", {"raw_args": "autonomous cycle"}, False, 0.98),
+            "begin learning": ("learn", "autonomous cycle", {"raw_args": "autonomous cycle"}, False, 0.98),
+            "learn now": ("learn", "autonomous cycle", {"raw_args": "autonomous cycle"}, False, 0.98),
+            "run learning cycle": ("learn", "autonomous cycle", {"raw_args": "autonomous cycle"}, False, 0.98),
+            "enable learning": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
+            "turn on learning": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
+            "turn learning on": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
+            "autonomous on": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
+            "disable learning": ("autonomous", "off", {"raw_args": "off"}, False, 0.98),
+            "turn off learning": ("autonomous", "off", {"raw_args": "off"}, False, 0.98),
+            "pause": ("pause", "Pause autonomous work", {}, False, 0.95),
+            "pause learning": ("pause", "Pause autonomous work", {}, False, 0.96),
+            "resume": ("resume", "Resume autonomous work", {}, False, 0.95),
+            "resume learning": ("resume", "Resume autonomous work", {}, False, 0.96),
+            "stop": ("emergency_stop", "Emergency stop Gizmo", {}, True, 0.97),
+            "stop everything": ("emergency_stop", "Emergency stop Gizmo", {}, True, 0.99),
+            "run tests": ("test", "Run tests", {}, False, 0.95),
+            "test": ("test", "Run tests", {}, False, 0.94),
+        }
+        if compact in exact:
+            intent, objective, args, requires, confidence = exact[compact]
+            return TelegramIntent(intent, "english", objective, requires_approval=requires, args=args, confidence=confidence)
+        if compact.startswith(("remember ", "remember that ")):
+            objective = raw.split(" ", 1)[1] if " " in raw else raw
+            if objective.lower().startswith("that "):
+                objective = objective[5:]
+            return TelegramIntent("remember", "english", objective, args={"raw_args": objective}, confidence=0.94)
+        if compact.startswith(("search memory for ", "find memory for ", "look up memory for ")):
+            query = raw.split(" for ", 1)[1]
+            return TelegramIntent("memory", "english", query, args={"query": query}, confidence=0.94)
+        if compact.startswith(("build ", "make ", "create ", "implement ")):
+            return TelegramIntent("build", "english", raw, priority="normal", confidence=0.9)
+        if compact.startswith(("deploy ", "ship ", "release ")):
+            return TelegramIntent("deploy", "english", raw, requires_approval=True, confidence=0.9)
+        return None
 
     def _from_command(self, command: str, rest: str, raw: str) -> TelegramIntent:
         mapping = {
