@@ -104,6 +104,23 @@ class GitHubApiAdapter:
         payload = {"body": f"GIZMO status update: {status_note}"}
         return self._maybe_execute("sync_issue_status", owner, repo, payload, execute, "POST", f"/repos/{owner}/{repo}/issues/{issue_number}/comments")
 
+    def dispatch_workflow(self, owner: str, repo: str, workflow: str, inputs: dict[str, Any], ref: str = "main", execute: bool = False) -> GitHubApiAction:
+        payload = {"ref": ref, "inputs": {key: str(value) for key, value in inputs.items()}}
+        return self._maybe_execute("dispatch_workflow", owner, repo, payload, execute, "POST", f"/repos/{owner}/{repo}/actions/workflows/{workflow}/dispatches")
+
+    def read_workflow_jobs(self, owner: str, repo: str, run_id: int, execute: bool = True) -> GitHubApiAction:
+        return self._maybe_execute("read_workflow_jobs", owner, repo, {"run_id": run_id}, execute, "GET", f"/repos/{owner}/{repo}/actions/runs/{run_id}/jobs", read_only=True)
+
+    def create_branch(self, owner: str, repo: str, branch: str, sha: str, execute: bool = False) -> GitHubApiAction:
+        payload = {"ref": f"refs/heads/{branch}", "sha": sha}
+        return self._maybe_execute("create_branch", owner, repo, payload, execute, "POST", f"/repos/{owner}/{repo}/git/refs")
+
+    def commit_file(self, owner: str, repo: str, path: str, message: str, content_base64: str, branch: str, sha: str | None = None, execute: bool = False) -> GitHubApiAction:
+        payload = {"message": message, "content": content_base64, "branch": branch}
+        if sha:
+            payload["sha"] = sha
+        return self._maybe_execute("commit_file", owner, repo, payload, execute, "PUT", f"/repos/{owner}/{repo}/contents/{path}")
+
     def _maybe_execute(
         self,
         action_type: str,

@@ -1,0 +1,32 @@
+name: GIZMO Nightly Evolution
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Project name
+        required: false
+        default: Gizmo
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  evolution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e . pytest
+      - run: python -m gizmo.core.cli brain-phase4 --workspace .gizmo_runtime/nightly > gizmo-nightly-evolution.json
+      - run: python -m pytest -q && python scripts/scan_secrets.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gizmo-nightly-evolution
+          path: gizmo-nightly-evolution.json

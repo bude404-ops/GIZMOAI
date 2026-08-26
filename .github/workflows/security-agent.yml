@@ -1,0 +1,59 @@
+name: GIZMO Security Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: GIZMO task id
+        required: true
+      agent:
+        description: Agent id
+        required: true
+      objective:
+        description: Task objective
+        required: true
+      priority:
+        description: Task priority
+        required: false
+        default: normal
+      autonomous:
+        description: Whether the task came from autonomous mode
+        required: false
+        default: 'false'
+      project:
+        description: Project name
+        required: false
+        default: Gizmo
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install package
+        run: python -m pip install -e . pytest
+      - name: Execute security agent task
+        env:
+          TASK_ID: ${{ inputs.task_id }}
+        run: |
+          mkdir -p .gizmo_runtime/action-results
+          safe_task_id=$(printf %s "$TASK_ID" | tr -cd "A-Za-z0-9._-")
+          test -n "$safe_task_id"
+          python -m gizmo.core.cli brain-phase4 --workspace ".gizmo_runtime/$safe_task_id" > ".gizmo_runtime/action-results/$safe_task_id.json"
+      - name: Test
+        run: python -m pytest -q
+      - name: Secret scan
+        run: python scripts/scan_secrets.py
+      - name: Upload structured result
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.task_id }}-result
+          path: .gizmo_runtime/action-results/*.json

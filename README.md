@@ -14,7 +14,9 @@ It is not Base44. It is designed as an organization: an executive orchestrator, 
 
 **Autonomous Learning Engine Phase 4 — Agent Memory Integration is implemented locally.**
 
-The system can initialize the organization, register the 27 core agents, create and execute tasks, store searchable memory, run harmless demo projects, reuse memory, detect capabilities, inspect GitHub workspace state, create branch-per-task plans, prepare PR plan artifacts, plan GitHub issue/PR/status API actions, enforce approval gates, route GitHub comments, build repo context packs, remember/retrieve lessons, initialize a persistent shared brain, export Obsidian-compatible Markdown, rank memory with hybrid retrieval, detect knowledge gaps, create research-task memories, generate vault indexes, export graph data, write backlink reports, preserve revisions, write session notes, run central Brain preflight before agent work, capture experiences/lessons/evaluations after work, maintain collective agent memory, track agent performance profiles, and produce auditable reports.
+**Telegram Control Center foundation is implemented locally.**
+
+The system can initialize the organization, register the 27 core agents, create and execute tasks, store searchable memory, run harmless demo projects, reuse memory, detect capabilities, inspect GitHub workspace state, create branch-per-task plans, prepare PR plan artifacts, plan GitHub issue/PR/status API actions, enforce approval gates, route GitHub comments, build repo context packs, remember/retrieve lessons, initialize a persistent shared brain, export Obsidian-compatible Markdown, rank memory with hybrid retrieval, detect knowledge gaps, create research-task memories, generate vault indexes, export graph data, write backlink reports, preserve revisions, write session notes, run central Brain preflight before agent work, capture experiences/lessons/evaluations after work, maintain collective agent memory, track agent performance profiles, authorize Telegram users, route Telegram commands/natural language into structured tasks, queue Telegram notifications, dispatch GitHub workflows through policy-gated plans, expose pause/resume/stop/autonomous controls, and produce auditable reports.
 
 ## Design rule
 
@@ -36,6 +38,8 @@ python -m gizmo.core.cli brain-init --workspace .gizmo_runtime
 python -m gizmo.core.cli brain-phase2 --workspace .gizmo_runtime
 python -m gizmo.core.cli brain-phase3 --workspace .gizmo_runtime
 python -m gizmo.core.cli brain-phase4 --workspace .gizmo_runtime
+python -m gizmo.core.cli telegram-demo --workspace .gizmo_runtime/telegram --user-id 101 --chat-id 201 --text "/status"
+python -m gizmo.core.cli telegram-demo --workspace .gizmo_runtime/telegram --user-id 101 --chat-id 201 --text "Build me a new autonomous research agent that learns from previous research."
 python -m gizmo.core.cli status --workspace .gizmo_runtime
 ```
 
@@ -58,4 +62,4 @@ GIZMO never hard-codes secrets. Use environment variables or GitHub secrets. All
 
 ## Next expansion
 
-Phase 1 should connect this bootstrap core to real GitHub branches/issues/PRs and add richer agent execution adapters while preserving the safety boundary.
+Next: deploy the real Telegram bot/webhook with production Telegram and GitHub App secrets, then enable approved live workflow execution.

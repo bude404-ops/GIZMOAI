@@ -1,0 +1,255 @@
+"""Telegram control layer that delegates to the existing Gizmo orchestrator."""
+from __future__ import annotations
+
+from typing import Any
+
+from gizmo.agents.core_agents import CORE_AGENTS, core_agent_map
+from gizmo.agents.registry import AgentRegistry
+from gizmo.brain.models import BrainMemoryType
+from gizmo.core.models import OperatingMode, Task, TaskStatus, now_iso
+from gizmo.github.api_adapter import GitHubApiAdapter
+from gizmo.telegram.config import TelegramConfig
+from gizmo.telegram.intents import TelegramIntent
+from gizmo.telegram.notifier import TelegramNotifier
+from gizmo.telegram.router import TelegramTaskEnvelope
+
+
+class TelegramControlLayer:
+    def __init__(self, orchestrator: Any, config: TelegramConfig | None = None, notifier: TelegramNotifier | None = None) -> None:
+        self.orchestrator = orchestrator
+        self.config = config or TelegramConfig.from_env()
+        self.notifier = notifier or TelegramNotifier(orchestrator.store, self.config.bot_token, self.config.notification_min_priority)
+        self.github = GitHubApiAdapter(orchestrator.store, orchestrator.security, orchestrator.audit)
+        self.registry = AgentRegistry(orchestrator.store, getattr(orchestrator, "agent_brain", None))
+
+    def handle_telegram_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        handlers = {
+            "start": self._start,
+            "help": self._help,
+            "status": self._status,
+            "agents": self._agents,
+            "projects": self._projects,
+            "tasks": self._tasks,
+            "task_detail": self._task_detail,
+            "run": self._run,
+            "emergency_stop": self._stop,
+            "pause": self._pause,
+            "resume": self._resume,
+            "autonomous": self._autonomous,
+            "learn": self._learn,
+            "memory": self._memory,
+            "remember": self._remember,
+            "logs": self._logs,
+            "build": self._build,
+            "test": self._test,
+            "deploy": self._deploy,
+            "approve": self._approve,
+            "deny": self._deny,
+            "restart": self._restart,
+            "natural_task": self._build,
+        }
+        result = handlers.get(intent.intent, self._build)(envelope, intent)
+        self.orchestrator.store.write({**envelope.to_dict(), "status": result.get("task_status", envelope.status), "result": result}, "telegram", "task_results", f"{envelope.task_id}.json")
+        if result.get("notify", True):
+            self.notifier.queue(envelope.chat_id, result.get("message", "Command accepted."), result.get("priority", "NORMAL"), result.get("inline_buttons", []))
+        return result
+
+    def _start(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        return {"ok": True, "message": "🧠 GIZMO ONLINE\nTelegram Control Center is ready. Use /help or tell me what to build.", "task_status": "COMPLETED"}
+
+    def _help(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        commands = "/status /agents /projects /tasks /task /run /pause /resume /stop /autonomous /learn /memory /remember /logs /build /test /deploy /approve /deny /restart"
+        return {"ok": True, "message": f"🧠 Commands\n{commands}\n\nNatural language works too: Build a new research agent that learns from previous research.", "task_status": "COMPLETED"}
+
+    def _status(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        status = self.orchestrator.status()
+        registry = self.registry.export_status()
+        tasks = self._list_tasks()
+        current = next((task for task in tasks if task.get("status") in {"RUNNING", "PLANNING", "TESTING", "REVIEW"}), None)
+        message = (
+            "🧠 GIZMO STATUS\n"
+            "System: 🟢 ONLINE\n"
+            "Reaper: 🟢 ACTIVE\n"
+            f"Agents: {registry['counts']['total']} registered / {registry['counts']['running']} active\n"
+            f"Current Task: {current['objective'][:90] if current else 'None active'}\n"
+            f"Tasks: {len(tasks)} tracked\n"
+            f"Approvals: {status.get('policy', {}).get('pending_approvals', 0)} pending\n"
+            f"Autonomous Mode: {'🟢 ENABLED' if self._autonomous_state().get('enabled') else '⚪ DISABLED'}"
+        )
+        return {"ok": True, "message": message, "task_status": "COMPLETED", "actions": [{"type": "status", "data": status}]}
+
+    def _agents(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        rows = []
+        for record in self.registry.list_agents():
+            rows.append(f"🟢 {record.name} — {record.status} / {record.health} / {record.profile.get('memory_contributions', 0)} memories")
+        return {"ok": True, "message": "🤖 AGENTS\n" + "\n".join(rows[:27]), "task_status": "COMPLETED"}
+
+    def _projects(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        projects = sorted({task.get("project", "Gizmo") for task in self._list_tasks()} | {"Gizmo"})
+        return {"ok": True, "message": "📁 PROJECTS\n" + "\n".join(f"• {p}" for p in projects), "task_status": "COMPLETED"}
+
+    def _tasks(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        tasks = self._list_tasks()[-10:]
+        if not tasks:
+            return {"ok": True, "message": "📋 TASKS\nNo tasks yet.", "task_status": "COMPLETED"}
+        lines = [f"• {t['id']}: {t['status']} — {t['objective'][:70]}" for t in tasks]
+        return {"ok": True, "message": "📋 TASKS\n" + "\n".join(lines), "task_status": "COMPLETED"}
+
+    def _task_detail(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        task_id = intent.objective.strip()
+        try:
+            task = self.orchestrator.tasks.load(task_id)
+            return {"ok": True, "message": f"📌 {task.id}\nStatus: {task.status.value}\nAgent: {task.assigned_agent}\nObjective: {task.objective}\nResult: {task.result or 'Pending'}", "task_status": "COMPLETED"}
+        except Exception:
+            return {"ok": False, "message": "Task not found.", "task_status": "FAILED", "priority": "FAILURE"}
+
+    def _run(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        objective = intent.objective if intent.objective != "Run queued task" else "Run requested Telegram task"
+        task = self._create_gizmo_task(objective, self._select_agent(objective))
+        executed = self.orchestrator._execute_allowed_task(task)
+        return {"ok": executed.status == TaskStatus.COMPLETED, "message": f"▶️ RUN COMPLETE\nTask: {executed.id}\nAgent: {executed.assigned_agent}\nStatus: {executed.status.value}", "task_status": executed.status.value}
+
+    def _stop(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        self.orchestrator.security.set_mode(OperatingMode.EMERGENCY)
+        self._set_autonomous(False, paused=True, emergency=True)
+        return {"ok": True, "message": "🛑 EMERGENCY STOP ACTIVE\nNew autonomous work is halted. Approval is required before resuming.", "task_status": "COMPLETED", "priority": "URGENT"}
+
+    def _pause(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        self._set_autonomous(False, paused=True, emergency=False)
+        return {"ok": True, "message": "⏸️ GIZMO PAUSED\nNew autonomous tasks are blocked. Approved active work may finish.", "task_status": "COMPLETED", "priority": "IMPORTANT"}
+
+    def _resume(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        self._set_autonomous(self._autonomous_state().get("enabled", False), paused=False, emergency=False)
+        self.orchestrator.security.set_mode(OperatingMode.MANUAL)
+        return {"ok": True, "message": "▶️ GIZMO RESUMED\nManual control is active. Autonomous mode remains permission-bound.", "task_status": "COMPLETED"}
+
+    def _autonomous(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        arg = intent.args.get("raw_args", "").lower().strip()
+        if arg in {"on", "enable", "enabled"}:
+            req = self.orchestrator.policy.request_approval("Gizmo", "autonomous_enable", "human-owner", "Enable permission-bound autonomous mode from Telegram.", "high")
+            return self._approval_message(req, "Autonomous mode enable requires approval.")
+        if arg in {"off", "disable", "disabled"}:
+            self._set_autonomous(False, paused=False, emergency=False)
+            return {"ok": True, "message": "⚪ Autonomous mode disabled.", "task_status": "COMPLETED"}
+        state = self._autonomous_state()
+        return {"ok": True, "message": f"Autonomous Mode: {'ON' if state.get('enabled') else 'OFF'}\nPaused: {state.get('paused', False)}\nEmergency: {state.get('emergency', False)}", "task_status": "COMPLETED"}
+
+    def _learn(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        task = self._create_gizmo_task(intent.objective or "Run learning cycle", "agent-26")
+        task.lessons_learned.append("Telegram learning request should become central Brain context.")
+        executed = self.orchestrator._execute_allowed_task(task)
+        memory = self.orchestrator.brain_core.record_lesson("Telegram learning request", intent.objective, source="telegram-control", source_agent="agent-26", project="Gizmo", tags=["telegram", "learning"])
+        return {"ok": True, "message": f"🧠 LEARNING CYCLE RECORDED\nTask: {executed.id}\nMemory: {memory.id}", "task_status": "COMPLETED"}
+
+    def _memory(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        query = intent.args.get("query") or intent.objective or "Gizmo"
+        memories = self.orchestrator.brain_core.hybrid_search(query, project="Gizmo", limit=5)
+        if not memories:
+            return {"ok": True, "message": "🧠 MEMORY\nNo strong match yet.", "task_status": "COMPLETED"}
+        lines = [f"• {m.type.value}: {m.title}" for m in memories]
+        return {"ok": True, "message": "🧠 MEMORY\n" + "\n".join(lines), "task_status": "COMPLETED"}
+
+    def _remember(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        text = intent.objective.strip()
+        if any(secret in text.lower() for secret in ["token", "secret", "password", "private key", "api key"]):
+            return {"ok": False, "message": "I will not store secrets in memory.", "task_status": "FAILED", "priority": "SECURITY"}
+        memory = self.orchestrator.brain_core.remember(BrainMemoryType.PREFERENCE, "Telegram memory", text, source="telegram", source_agent="human-owner", project="Gizmo", tags=["telegram", "explicit-memory"])
+        return {"ok": True, "message": f"🧠 Remembered.\nMemory: {memory.id}", "task_status": "COMPLETED"}
+
+    def _logs(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        logs = self.orchestrator.store.read("monitoring", "audit_log.json", default=[])[-8:]
+        if not logs:
+            return {"ok": True, "message": "📜 LOGS\nNo audit entries yet.", "task_status": "COMPLETED"}
+        lines = [f"• {log.get('action')} — {log.get('result')}" for log in logs]
+        return {"ok": True, "message": "📜 LOGS\n" + "\n".join(lines), "task_status": "COMPLETED"}
+
+    def _build(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        objective = intent.objective
+        agent_id = self._select_agent(objective)
+        task = self._create_gizmo_task(objective, agent_id)
+        owner, repo = self._repo_parts()
+        workflow = self.github.dispatch_workflow(owner, repo, "agent-runner.yml", {"task_id": task.id, "agent": agent_id, "objective": objective, "priority": intent.priority, "autonomous": "false", "project": task.project}, execute=False)
+        return {"ok": True, "message": f"🧱 TASK QUEUED\nTask: {task.id}\nAgent: {agent_id}\nGitHub dispatch: {workflow.status}", "task_status": "QUEUED", "actions": [workflow.to_dict()]}
+
+    def _test(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        task = self._create_gizmo_task(intent.objective or "Run tests", "agent-11")
+        owner, repo = self._repo_parts()
+        workflow = self.github.dispatch_workflow(owner, repo, "testing-agent.yml", {"task_id": task.id, "agent": "agent-11", "objective": task.objective, "priority": "normal", "autonomous": "false", "project": "Gizmo"}, execute=False)
+        return {"ok": True, "message": f"🧪 TEST TASK QUEUED\nTask: {task.id}\nWorkflow: {workflow.status}", "task_status": "QUEUED", "actions": [workflow.to_dict()]}
+
+    def _deploy(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        req = self.orchestrator.policy.request_approval("Gizmo", "deploy", "agent-09", f"Deploy requested from Telegram: {intent.objective}", "critical")
+        return self._approval_message(req, "Deploy requires approval.")
+
+    def _approve(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        parts = intent.objective.split()
+        if len(parts) < 2:
+            return {"ok": False, "message": "Use /approve <approval_id> <approval_code>", "task_status": "FAILED", "priority": "FAILURE"}
+        try:
+            decided = self.orchestrator.policy.decide(parts[0], parts[1], True, "Approved from Telegram")
+            if decided.action == "autonomous_enable":
+                self._set_autonomous(True, paused=False, emergency=False)
+            return {"ok": True, "message": f"✅ APPROVED\n{decided.id}\nAction: {decided.action}", "task_status": "COMPLETED", "priority": "IMPORTANT"}
+        except Exception:
+            return {"ok": False, "message": "Approval failed. Verify the approval ID and code.", "task_status": "FAILED", "priority": "SECURITY"}
+
+    def _deny(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        parts = intent.objective.split()
+        if len(parts) < 2:
+            return {"ok": False, "message": "Use /deny <approval_id> <approval_code>", "task_status": "FAILED", "priority": "FAILURE"}
+        try:
+            decided = self.orchestrator.policy.decide(parts[0], parts[1], False, "Denied from Telegram")
+            return {"ok": True, "message": f"❌ DENIED\n{decided.id}\nAction: {decided.action}", "task_status": "COMPLETED", "priority": "IMPORTANT"}
+        except Exception:
+            return {"ok": False, "message": "Deny failed. Verify the approval ID and code.", "task_status": "FAILED", "priority": "SECURITY"}
+
+    def _restart(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        req = self.orchestrator.policy.request_approval("Gizmo", "restart", "human-owner", "Restart orchestration layer from Telegram.", "high")
+        return self._approval_message(req, "Restart requires approval.")
+
+    def _approval_message(self, req: Any, message: str) -> dict[str, Any]:
+        buttons = [[{"text": "✅ APPROVE", "callback_data": f"/approve {req.id} {req.approval_code}"}, {"text": "❌ DENY", "callback_data": f"/deny {req.id} {req.approval_code}"}]]
+        return {"ok": True, "message": f"⚠️ APPROVAL REQUIRED\n{message}\nAction: {req.action}\nID: {req.id}", "task_status": "HUMAN_REVIEW", "priority": "APPROVAL_REQUIRED", "inline_buttons": buttons}
+
+    def _create_gizmo_task(self, objective: str, agent_id: str) -> Task:
+        task = Task(project="Gizmo", objective=objective, assigned_agent=agent_id, priority=3)
+        task.record("telegram_create", "Task created from Telegram control center")
+        self.orchestrator.tasks.create_task(task)
+        return task
+
+    def _select_agent(self, objective: str) -> str:
+        lowered = objective.lower()
+        if "research" in lowered or "news" in lowered:
+            return "agent-02"
+        if "test" in lowered or "qa" in lowered:
+            return "agent-11"
+        if "security" in lowered or "audit" in lowered:
+            return "agent-12"
+        if "deploy" in lowered or "workflow" in lowered:
+            return "agent-09"
+        if "memory" in lowered or "learn" in lowered:
+            return "agent-26"
+        if "frontend" in lowered or "dashboard" in lowered:
+            return "agent-07"
+        if "database" in lowered:
+            return "agent-08"
+        return "agent-01"
+
+    def _repo_parts(self) -> tuple[str, str]:
+        repo = self.config.github_repository
+        if "/" not in repo:
+            return "unknown", repo
+        owner, name = repo.split("/", 1)
+        return owner, name
+
+    def _autonomous_state(self) -> dict[str, Any]:
+        return self.orchestrator.store.read("control", "autonomous_mode.json", default={"enabled": False, "paused": False, "emergency": False, "updated_at": now_iso()})
+
+    def _set_autonomous(self, enabled: bool, paused: bool, emergency: bool) -> None:
+        self.orchestrator.store.write({"enabled": enabled, "paused": paused, "emergency": emergency, "updated_at": now_iso(), "boundaries": ["approval_required", "policy_gated", "no_secret_memory"]}, "control", "autonomous_mode.json")
+
+    def _list_tasks(self) -> list[dict[str, Any]]:
+        try:
+            return [task.to_dict() for task in self.orchestrator.tasks.list_tasks()]
+        except Exception:
+            return []

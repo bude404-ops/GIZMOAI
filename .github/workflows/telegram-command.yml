@@ -1,0 +1,59 @@
+name: GIZMO Telegram Command
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        description: Telegram task id
+        required: true
+      user_id:
+        description: Authorized Telegram user id
+        required: true
+      chat_id:
+        description: Telegram chat id
+        required: true
+      command:
+        description: Telegram command or natural language request
+        required: true
+      objective:
+        description: Structured objective
+        required: true
+      priority:
+        description: Priority
+        required: false
+        default: normal
+      project:
+        description: Project name
+        required: false
+        default: Gizmo
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+jobs:
+  telegram-command:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -e . pytest
+      - name: Simulate Telegram command safely
+        env:
+          TELEGRAM_ADMIN_ID: ${{ inputs.user_id }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          REAPER_AUTH_SECRET: ${{ secrets.REAPER_AUTH_SECRET }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          TELEGRAM_USER_ID: ${{ inputs.user_id }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id }}
+          TELEGRAM_COMMAND: ${{ inputs.command }}
+        run: |
+          python -m gizmo.core.cli telegram-demo --workspace .gizmo_runtime/telegram --user-id "$TELEGRAM_USER_ID" --chat-id "$TELEGRAM_CHAT_ID" --text "$TELEGRAM_COMMAND" > telegram-result.json
+      - run: python -m pytest -q && python scripts/scan_secrets.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.task_id }}-telegram-result
+          path: telegram-result.json
