@@ -7,6 +7,8 @@ from typing import Any
 
 from gizmo.agents.core_agents import CORE_AGENTS, core_agent_map
 from gizmo.agent_factory.factory import AgentFactory
+from gizmo.brain.bootstrap import BrainBootstrapper
+from gizmo.brain.memory_api import SecondBrain
 from gizmo.communication.message_bus import MessageBus
 from gizmo.core.models import MemoryKind, OperatingMode, StructuredMessage, Task, TaskStatus
 from gizmo.core.store import JsonStore
@@ -51,6 +53,7 @@ class GizmoOrchestrator:
         self.policy = ApprovalPolicyEngine(self.store, self.audit)
         self.context_indexer = RepoContextIndexer(Path.cwd())
         self.second_brain = SecondBrainCommandRouter(self.memory, self.tasks, self.context_indexer)
+        self.brain_core = SecondBrain(self.workspace / "second_brain")
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -124,6 +127,24 @@ class GizmoOrchestrator:
             "deploy_decision": deploy_block.to_dict(),
             "policy_status": status,
         }
+
+    def brain_initialization_demo(self) -> dict[str, Any]:
+        """Initialize the persistent shared Second Brain from verified repo data."""
+        self.bootstrap()
+        bootstrapper = BrainBootstrapper(self.brain_core, Path.cwd())
+        report = bootstrapper.initialize_from_repository()
+        recall = self.brain_core.recall("approval GitHub second brain", limit=5)
+        semantic = self.brain_core.semantic_search("autonomous learning memory retrieval", limit=5)
+        result = {
+            "ready": report["health"]["memories"] >= 40 and len(recall) > 0 and len(semantic) > 0,
+            "report": report,
+            "recall_count": len(recall),
+            "semantic_count": len(semantic),
+            "sample_recall": [memory.to_dict() for memory in recall[:3]],
+        }
+        self.store.write(result, "brain", "initialization_report.json")
+        self.audit.log("agent-01", None, "brain.initialization", "passed" if result["ready"] else "failed", report=result)
+        return result
 
     def second_brain_demo(self) -> dict[str, Any]:
         """Exercise GitHub-side second brain command flow."""
@@ -236,5 +257,6 @@ class GizmoOrchestrator:
             "github_api": self.github_api.export_status(),
             "policy": self.policy.export_status(),
             "second_brain": {"indexed_files": self.context_indexer.build_index()["file_count"]},
+            "brain_core": self.brain_core.export_health(),
             "capabilities": self.store.read("config", "capabilities.json", default={}),
         }
