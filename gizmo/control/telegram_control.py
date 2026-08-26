@@ -6,6 +6,7 @@ from typing import Any
 from gizmo.agents.core_agents import CORE_AGENTS, core_agent_map
 from gizmo.agents.registry import AgentRegistry
 from gizmo.brain.models import BrainMemoryType
+from gizmo.control.autonomous_learning import TelegramAutonomousKnowledgeRunner
 from gizmo.core.models import OperatingMode, Task, TaskStatus, now_iso
 from gizmo.github.api_adapter import GitHubApiAdapter
 from gizmo.telegram.config import TelegramConfig
@@ -21,6 +22,7 @@ class TelegramControlLayer:
         self.notifier = notifier or TelegramNotifier(orchestrator.store, self.config.bot_token, self.config.notification_min_priority)
         self.github = GitHubApiAdapter(orchestrator.store, orchestrator.security, orchestrator.audit)
         self.registry = AgentRegistry(orchestrator.store, getattr(orchestrator, "agent_brain", None))
+        self.autonomous_learning = TelegramAutonomousKnowledgeRunner(orchestrator, self.notifier)
 
     def handle_telegram_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         handlers = {
@@ -66,6 +68,7 @@ class TelegramControlLayer:
         registry = self.registry.export_status()
         tasks = self._list_tasks()
         current = next((task for task in tasks if task.get("status") in {"RUNNING", "PLANNING", "TESTING", "REVIEW"}), None)
+        latest_cycle = self.autonomous_learning.latest_cycle() or {}
         message = (
             "🧠 GIZMO STATUS\n"
             "System: 🟢 ONLINE\n"
@@ -74,7 +77,8 @@ class TelegramControlLayer:
             f"Current Task: {current['objective'][:90] if current else 'None active'}\n"
             f"Tasks: {len(tasks)} tracked\n"
             f"Approvals: {status.get('policy', {}).get('pending_approvals', 0)} pending\n"
-            f"Autonomous Mode: {'🟢 ENABLED' if self._autonomous_state().get('enabled') else '⚪ DISABLED'}"
+            f"Autonomous Mode: {'🟢 ENABLED' if self._autonomous_state().get('enabled') else '⚪ DISABLED'}\n"
+            f"Knowledge Cycle: {latest_cycle.get('status', 'not run')}"
         )
         return {"ok": True, "message": message, "task_status": "COMPLETED", "actions": [{"type": "status", "data": status}]}
 
@@ -135,10 +139,14 @@ class TelegramControlLayer:
         return {"ok": True, "message": f"Autonomous Mode: {'ON' if state.get('enabled') else 'OFF'}\nPaused: {state.get('paused', False)}\nEmergency: {state.get('emergency', False)}", "task_status": "COMPLETED"}
 
     def _learn(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
-        task = self._create_gizmo_task(intent.objective or "Run learning cycle", "agent-26")
+        objective = intent.objective or "Run Telegram autonomous learning cycle"
+        if "cycle" in objective.lower() or "autonomous" in objective.lower() or objective.lower().strip() in {"", "now", "run"}:
+            cycle = self.autonomous_learning.run_cycle(chat_id=envelope.chat_id)
+            return {"ok": cycle.status == "COMPLETED", "message": cycle.notification, "task_status": cycle.status, "priority": "IMPORTANT", "actions": [{"type": "autonomous_learning_cycle", "data": cycle.to_dict()}]}
+        task = self._create_gizmo_task(objective, "agent-26")
         task.lessons_learned.append("Telegram learning request should become central Brain context.")
         executed = self.orchestrator._execute_allowed_task(task)
-        memory = self.orchestrator.brain_core.record_lesson("Telegram learning request", intent.objective, source="telegram-control", source_agent="agent-26", project="Gizmo", tags=["telegram", "learning"])
+        memory = self.orchestrator.brain_core.record_lesson("Telegram learning request", objective, source="telegram-control", source_agent="agent-26", project="Gizmo", tags=["telegram", "learning"])
         return {"ok": True, "message": f"🧠 LEARNING CYCLE RECORDED\nTask: {executed.id}\nMemory: {memory.id}", "task_status": "COMPLETED"}
 
     def _memory(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
@@ -188,7 +196,7 @@ class TelegramControlLayer:
         try:
             decided = self.orchestrator.policy.decide(parts[0], parts[1], True, "Approved from Telegram")
             if decided.action == "autonomous_enable":
-                self._set_autonomous(True, paused=False, emergency=False)
+                self.autonomous_learning.enable(chat_id=envelope.chat_id, source="telegram-approval")
             return {"ok": True, "message": f"✅ APPROVED\n{decided.id}\nAction: {decided.action}", "task_status": "COMPLETED", "priority": "IMPORTANT"}
         except Exception:
             return {"ok": False, "message": "Approval failed. Verify the approval ID and code.", "task_status": "FAILED", "priority": "SECURITY"}

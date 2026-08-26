@@ -1,0 +1,72 @@
+name: GIZMO Telegram Autonomous Learning
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable:
+        description: Enable autonomous learning before running the cycle
+        required: false
+        default: 'false'
+      chat_id:
+        description: Telegram chat ID for the summary; defaults to TELEGRAM_ADMIN_ID
+        required: false
+        default: ''
+  schedule:
+    - cron: '23 */6 * * *'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  telegram-autonomous-learning:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
+      REAPER_AUTH_SECRET: ${{ secrets.REAPER_AUTH_SECRET }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GIZMO_NOTIFICATION_MIN_PRIORITY: IMPORTANT
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install GIZMO
+        run: python -m pip install -e . pytest
+      - name: Run Telegram autonomous knowledge cycle
+        env:
+          INPUT_ENABLE: ${{ inputs.enable }}
+          INPUT_CHAT_ID: ${{ inputs.chat_id }}
+        run: |
+          mkdir -p .gizmo_runtime/action-results
+          chat_id="$INPUT_CHAT_ID"
+          if [ -z "$chat_id" ]; then chat_id="$TELEGRAM_ADMIN_ID"; fi
+          enable_arg="off"
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] || [ "$INPUT_ENABLE" = "true" ] || [ "$INPUT_ENABLE" = "on" ]; then enable_arg="on"; fi
+          python -m gizmo.core.cli telegram-autonomous-cycle --workspace .gizmo_runtime/telegram-autonomous --chat-id "$chat_id" --text "$enable_arg" > .gizmo_runtime/action-results/telegram-autonomous-learning.json
+      - name: Send Telegram summary
+        if: ${{ env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_ADMIN_ID != '' }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          from pathlib import Path
+          result=json.loads(Path('.gizmo_runtime/action-results/telegram-autonomous-learning.json').read_text())
+          text=result.get('notification') or f"GIZMO autonomous learning cycle: {result.get('status')}"
+          payload={"chat_id": os.environ['TELEGRAM_ADMIN_ID'], "text": text[:3900]}
+          req=urllib.request.Request(
+              f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
+              data=json.dumps(payload).encode(),
+              method='POST',
+              headers={'Content-Type':'application/json'},
+          )
+          with urllib.request.urlopen(req, timeout=20) as response:
+              print(json.dumps({'telegram_status': response.status, 'cycle_status': result.get('status')}))
+          PY
+      - name: Verify safety
+        run: python -m pytest -q && python scripts/scan_secrets.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-autonomous-learning-result
+          path: .gizmo_runtime/action-results/telegram-autonomous-learning.json

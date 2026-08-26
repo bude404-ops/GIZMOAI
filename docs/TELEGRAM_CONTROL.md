@@ -39,6 +39,7 @@ Telegram notifications
 - `/resume`
 - `/autonomous on|off`
 - `/learn <topic>`
+- `/learn autonomous cycle`
 - `/memory <query>`
 - `/remember <safe memory>`
 - `/logs latest|task <id>|agent <id>`
@@ -90,3 +91,14 @@ python -m gizmo.core.cli telegram-demo --user-id 101 --chat-id 201 --text "Build
 ## GitHub workflow path
 
 Telegram build/test requests create a Gizmo task and a planned GitHub workflow dispatch. Real execution is enabled only when credentials and policy allow it.
+
+## Autonomous Telegram knowledge mode
+
+Telegram can now trigger and monitor a safe autonomous knowledge cycle.
+
+- `/autonomous on` requests approval to enable permission-bound autonomous mode.
+- `/learn autonomous cycle` runs one knowledge enhancement pass when autonomous mode is enabled.
+- Scheduled GitHub workflow `telegram-autonomous-learning.yml` runs the same cycle every six hours.
+- `/status` reports the latest knowledge cycle state.
+
+The cycle creates structured Second Brain research, lessons, evaluations, follow-up learning tasks, vault indexes, and a Telegram-ready summary. It does not store secrets or bypass approval gates.

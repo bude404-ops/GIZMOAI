@@ -44,3 +44,25 @@ Use `/logs latest` for concise summaries. Detailed records remain in structured 
 - Missing admin ID: runtime is not production-ready until allowlist is configured.
 - GitHub write blocked: provide least-privilege GitHub App credentials or token and satisfy approval policy.
 - Deployment blocked: approve the exact approval ID and code.
+
+## Run autonomous Telegram knowledge cycle
+
+Local enabled run:
+
+```bash
+python -m gizmo.core.cli telegram-autonomous-cycle --workspace .gizmo_runtime/telegram-auto --chat-id 7257834686 --text on
+```
+
+Telegram command after approval:
+
+```text
+/learn autonomous cycle
+```
+
+GitHub workflow:
+
+- `GIZMO Telegram Autonomous Learning`
+- schedule: every six hours
+- manual dispatch input: `enable=true`
+
+The workflow sends a short Telegram summary when Telegram secrets are present.
