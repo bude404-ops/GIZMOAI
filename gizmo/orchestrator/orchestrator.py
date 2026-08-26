@@ -7,6 +7,7 @@ from typing import Any
 
 from gizmo.agents.core_agents import CORE_AGENTS, core_agent_map
 from gizmo.agent_factory.factory import AgentFactory
+from gizmo.brain.agent_memory import AgentBrainBridge
 from gizmo.brain.bootstrap import BrainBootstrapper
 from gizmo.brain.memory_api import SecondBrain
 from gizmo.communication.message_bus import MessageBus
@@ -54,6 +55,7 @@ class GizmoOrchestrator:
         self.context_indexer = RepoContextIndexer(Path.cwd())
         self.second_brain = SecondBrainCommandRouter(self.memory, self.tasks, self.context_indexer)
         self.brain_core = SecondBrain(self.workspace / "second_brain")
+        self.agent_brain = AgentBrainBridge(self.brain_core, self.store)
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -96,6 +98,7 @@ class GizmoOrchestrator:
         return self._execute_allowed_task(task)
 
     def _execute_allowed_task(self, task: Task) -> Task:
+        self.agent_brain.before_task(task)
         self.costs.record_operation(f"execute:{task.assigned_agent}")
         task.status = TaskStatus.RUNNING
         task.record("run", "Task execution started")
@@ -104,6 +107,7 @@ class GizmoOrchestrator:
             task.status = TaskStatus.FAILED
             task.result = "Assigned agent not found"
             self.tasks.save(task)
+            self.agent_brain.after_task(task, failed=["Assigned agent not found"])
             return task
         task.status = TaskStatus.COMPLETED
         task.result = f"{agent.name} completed bootstrap-level work for objective: {task.objective}"
@@ -111,6 +115,7 @@ class GizmoOrchestrator:
         task.record("complete", task.result)
         self.tasks.save(task)
         self.memory.add(MemoryKind.EPISODIC, task.project, f"{task.assigned_agent} completed {task.objective}. Lesson: {task.lessons_learned[-1]}", ["task", task.assigned_agent], {"task_id": task.id})
+        self.agent_brain.after_task(task, worked=["bootstrap execution", "central Brain integration"])
         self.audit.log(task.assigned_agent, task.id, "execute_task", "completed", task_result=task.result)
         return task
 
@@ -226,6 +231,37 @@ class GizmoOrchestrator:
         self.audit.log("agent-26", None, "brain.phase3", "passed" if result["ready"] else "failed", report=result)
         return result
 
+    def brain_phase4_demo(self) -> dict[str, Any]:
+        """Exercise central Brain integration for agent recall, capture, and performance memory."""
+        phase3 = self.brain_phase3_demo()
+        task = Task(
+            project="Gizmo",
+            objective="Integrate every agent with central Brain recall and automatic learning capture",
+            assigned_agent="agent-26",
+            priority=1,
+        )
+        self.tasks.create_task(task)
+        executed = self._execute_allowed_task(task)
+        profile = self.agent_brain.agent_profile("agent-26")
+        collective = self.agent_brain.collective_memory()
+        related = self.brain_core.hybrid_search("central Brain integration agent memory lesson", project="Gizmo", limit=8)
+        self.brain_core.rebuild_vault_indexes()
+        result = {
+            "ready": phase3["ready"] and executed.status == TaskStatus.COMPLETED and profile.get("memory_contributions", 0) >= 1 and len(collective.get("evaluations", [])) >= 1,
+            "phase3_ready": phase3["ready"],
+            "task": executed.to_dict(),
+            "agent_profile": profile,
+            "collective_counts": {
+                "discoveries": len(collective.get("discoveries", [])),
+                "lessons": len(collective.get("lessons", [])),
+                "evaluations": len(collective.get("evaluations", [])),
+            },
+            "related_memory_count": len(related),
+        }
+        self.store.write(result, "brain", "phase4_report.json")
+        self.audit.log("agent-26", executed.id, "brain.phase4", "passed" if result["ready"] else "failed", report=result)
+        return result
+
     def second_brain_demo(self) -> dict[str, Any]:
         """Exercise GitHub-side second brain command flow."""
         self.bootstrap()
@@ -338,5 +374,9 @@ class GizmoOrchestrator:
             "policy": self.policy.export_status(),
             "second_brain": {"indexed_files": self.context_indexer.build_index()["file_count"]},
             "brain_core": self.brain_core.export_health(),
+            "agent_memory": {
+                "profiles": len(list((self.workspace / "brain" / "agent_profiles").glob("*.json"))) if (self.workspace / "brain" / "agent_profiles").exists() else 0,
+                "collective_lessons": len(self.agent_brain.collective_memory().get("lessons", [])),
+            },
             "capabilities": self.store.read("config", "capabilities.json", default={}),
         }
