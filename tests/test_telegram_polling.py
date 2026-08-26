@@ -64,3 +64,36 @@ def test_poll_once_sends_denial_for_unknown_user(tmp_path: Path):
     assert result["ok"] is True
     assert result["results"][0]["ok"] is False
     assert any(item["text"] == "Access denied." and item["priority"] == "SECURITY" for item in notifier.sent)
+
+
+def test_poll_loop_keeps_listening_across_multiple_batches(tmp_path: Path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    orchestrator.bootstrap()
+    config = TelegramConfig(bot_token="test-token", admin_ids={"101"}, github_repository="owner/repo", reaper_auth_secret_available=True)
+    notifier = FakeNotifier()
+    control = TelegramControlLayer(orchestrator, config=config, notifier=notifier)
+    router = TelegramCommandRouter(orchestrator.store, TelegramAuthorizer(config.admin_ids), control)
+    runtime = TelegramBotRuntime(config, router, notifier)
+    batches = [
+        {"ok": True, "result": [{"update_id": 100, "message": {"from": {"id": 101}, "chat": {"id": 201}, "text": "status"}}]},
+        {"ok": True, "result": [{"update_id": 101, "message": {"from": {"id": 101}, "chat": {"id": 201}, "text": "agents"}}]},
+        {"ok": True, "result": []},
+    ]
+    calls = []
+
+    def fake_get_updates(offset=None, timeout=30):
+        calls.append({"offset": offset, "timeout": timeout})
+        if timeout == 1:
+            return {"ok": True, "result": []}
+        return batches.pop(0) if batches else {"ok": True, "result": []}
+
+    runtime.get_updates = fake_get_updates
+    result = runtime.poll_loop(duration_seconds=12, timeout=5, max_idle_cycles=2)
+
+    assert result["ok"] is True
+    assert result["processed"] == 2
+    assert result["replies_sent"] == 2
+    assert any("GIZMO STATUS" in item["text"] for item in notifier.sent)
+    assert any("AGENTS" in item["text"] for item in notifier.sent)
+    assert any(call["offset"] == 101 for call in calls)
+    assert any(call["offset"] == 102 for call in calls)

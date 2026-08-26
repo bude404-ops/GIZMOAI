@@ -22,12 +22,15 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     parser.add_argument("--user-id", default="1")
     parser.add_argument("--chat-id", default="1")
     parser.add_argument("--text", default="/status")
+    parser.add_argument("--duration-seconds", type=int, default=3300)
+    parser.add_argument("--poll-timeout", type=int, default=25)
+    parser.add_argument("--max-idle-cycles", type=int, default=0)
     args = parser.parse_args()
     orchestrator = GizmoOrchestrator(args.workspace)
     if args.command == "bootstrap":
@@ -72,7 +75,14 @@ def main() -> None:
         control = TelegramControlLayer(orchestrator, config=config)
         router = TelegramCommandRouter(orchestrator.store, TelegramAuthorizer(config.admin_ids), control)
         runtime = TelegramBotRuntime(config, router, control.notifier)
-        emit(runtime.poll_once(send_replies=True, acknowledge=True))
+        emit(runtime.poll_once(send_replies=True, acknowledge=True, timeout=args.poll_timeout))
+    elif args.command == "telegram-poll-loop":
+        config = TelegramConfig.from_env()
+        control = TelegramControlLayer(orchestrator, config=config)
+        router = TelegramCommandRouter(orchestrator.store, TelegramAuthorizer(config.admin_ids), control)
+        runtime = TelegramBotRuntime(config, router, control.notifier)
+        max_idle = args.max_idle_cycles if args.max_idle_cycles > 0 else None
+        emit(runtime.poll_loop(duration_seconds=args.duration_seconds, timeout=args.poll_timeout, send_replies=True, acknowledge=True, max_idle_cycles=max_idle))
     elif args.command == "status":
         emit(orchestrator.status())
     elif args.command == "stop":

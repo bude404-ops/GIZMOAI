@@ -98,3 +98,7 @@ search memory for simple English terms
 ```
 
 The poller treats these exactly like slash commands after admin authorization.
+
+## Telegram live responder verification
+
+The Telegram responder workflow should normally be running or recently renewed. If Telegram appears silent, dispatch `GIZMO Telegram Live Responder` once and then check that the `Keep Telegram responder online` step is in progress or completed successfully.

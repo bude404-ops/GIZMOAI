@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -30,8 +31,8 @@ class TelegramBotRuntime:
         with urllib.request.urlopen(url, timeout=timeout + 5) as response:
             return json.loads(response.read().decode("utf-8"))
 
-    def poll_once(self, offset: int | None = None, *, send_replies: bool = False, acknowledge: bool = True) -> dict[str, Any]:
-        updates = self.get_updates(offset=offset)
+    def poll_once(self, offset: int | None = None, *, send_replies: bool = False, acknowledge: bool = True, timeout: int = 30) -> dict[str, Any]:
+        updates = self.get_updates(offset=offset, timeout=timeout)
         if not updates.get("ok"):
             return updates
         results = []
@@ -46,6 +47,48 @@ class TelegramBotRuntime:
             if acknowledge:
                 self.get_updates(offset=next_offset, timeout=1)
         return {"ok": True, "next_offset": next_offset, "results": results, "replies_sent": send_replies}
+
+    def poll_loop(self, *, duration_seconds: int = 3300, timeout: int = 25, send_replies: bool = True, acknowledge: bool = True, max_idle_cycles: int | None = None) -> dict[str, Any]:
+        deadline = time.monotonic() + max(1, duration_seconds)
+        offset: int | None = None
+        cycles = 0
+        idle_cycles = 0
+        processed = 0
+        replies_sent = 0
+        errors: list[str] = []
+        last_result: dict[str, Any] | None = None
+        while time.monotonic() < deadline:
+            remaining = int(deadline - time.monotonic())
+            if remaining <= 0:
+                break
+            effective_timeout = max(1, min(timeout, remaining))
+            try:
+                result = self.poll_once(offset=offset, send_replies=send_replies, acknowledge=acknowledge, timeout=effective_timeout)
+            except Exception as exc:
+                errors.append(type(exc).__name__)
+                time.sleep(min(5, max(1, effective_timeout)))
+                continue
+            cycles += 1
+            last_result = result
+            if not result.get("ok"):
+                errors.append(str(result.get("error", "poll_failed"))[:120])
+                time.sleep(5)
+                continue
+            if result.get("next_offset") is not None:
+                offset = result["next_offset"]
+            count = len(result.get("results", []))
+            processed += count
+            if send_replies:
+                replies_sent += count
+            if count:
+                idle_cycles = 0
+            else:
+                idle_cycles += 1
+                if max_idle_cycles is not None and idle_cycles >= max_idle_cycles:
+                    break
+            if effective_timeout < 3:
+                break
+        return {"ok": not errors, "cycles": cycles, "processed": processed, "replies_sent": replies_sent, "last_offset": offset, "errors": errors[-5:], "last_result": last_result}
 
     def _send_route_reply(self, update: dict[str, Any], routed: dict[str, Any]) -> None:
         if not self.notifier:

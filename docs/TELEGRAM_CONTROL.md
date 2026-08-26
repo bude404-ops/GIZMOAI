@@ -129,3 +129,9 @@ Examples:
 - `build <thing>` → create a GIZMO task
 
 Sensitive English phrases still hit the same gates. `turn on learning`, `deploy ...`, `release ...`, `stop`, and `stop everything` remain approval/safety-bound.
+
+## Live Telegram responder
+
+Telegram command handling now uses a live long-poll responder instead of relying on a single scheduled check. The responder stays awake for a controlled window, renews on schedule, replies to authorized admin messages, and acknowledges processed updates.
+
+Expected behavior: simple English terms such as `status`, `begin learning`, and `what did you learn?` should be answered by the bot without Reaper manually dispatching a workflow.
