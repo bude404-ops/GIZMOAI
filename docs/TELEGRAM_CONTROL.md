@@ -59,12 +59,15 @@ The router converts the message into a structured task envelope before Reaper re
 
 ## Runtime secrets
 
-Required:
+Required secrets:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_ADMIN_ID`
-- `GITHUB_REPOSITORY`
 - `REAPER_AUTH_SECRET`
+
+Required runtime environment:
+
+- `GITHUB_REPOSITORY` — supplied automatically by GitHub Actions; set manually only outside Actions.
 
 Optional:
 
