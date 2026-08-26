@@ -10,9 +10,9 @@ It is not Base44. It is designed as an organization: an executive orchestrator, 
 
 **Phase 1 GitHub Workspace Loop is implemented.**
 
-**Phase 3 Approval + Policy Engine is implemented locally.**
+**Phase 4 GitHub Second Brain is implemented locally.**
 
-The system can initialize the organization, register the 27 core agents, create and execute tasks, store searchable memory, run harmless demo projects, reuse memory, detect capabilities, inspect GitHub workspace state, create branch-per-task plans, prepare PR plan artifacts, plan GitHub issue/PR/status API actions, enforce approval gates, and produce auditable reports.
+The system can initialize the organization, register the 27 core agents, create and execute tasks, store searchable memory, run harmless demo projects, reuse memory, detect capabilities, inspect GitHub workspace state, create branch-per-task plans, prepare PR plan artifacts, plan GitHub issue/PR/status API actions, enforce approval gates, route GitHub comments, build repo context packs, remember/retrieve lessons, and produce auditable reports.
 
 ## Design rule
 
@@ -28,6 +28,8 @@ python -m gizmo.core.cli self-test --workspace .gizmo_runtime
 python -m gizmo.core.cli github-demo --workspace .gizmo_runtime
 python -m gizmo.core.cli github-api-demo --workspace .gizmo_runtime
 python -m gizmo.core.cli policy-demo --workspace .gizmo_runtime
+python -m gizmo.core.cli second-brain-demo --workspace .gizmo_runtime
+python -m gizmo.core.cli second-brain-demo --workspace .gizmo_runtime --comment "/gizmo context approval policy"
 python -m gizmo.core.cli status --workspace .gizmo_runtime
 ```
 

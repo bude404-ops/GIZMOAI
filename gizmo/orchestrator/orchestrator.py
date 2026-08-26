@@ -18,6 +18,8 @@ from gizmo.monitoring.logger import AuditLogger
 from gizmo.projects.project_generator import ProjectGenerator
 from gizmo.security.approval_policy import ApprovalPolicyEngine
 from gizmo.security.security_system import SecuritySystem
+from gizmo.second_brain.command_router import SecondBrainCommandRouter
+from gizmo.second_brain.context_indexer import RepoContextIndexer
 from gizmo.tasks.task_engine import TaskEngine
 from gizmo.tools.tool_registry import ToolRegistry
 from gizmo.unreal.unreal_detector import UnrealDetector
@@ -47,6 +49,8 @@ class GizmoOrchestrator:
         )
         self.github_api = GitHubApiAdapter(self.store, self.security, self.audit)
         self.policy = ApprovalPolicyEngine(self.store, self.audit)
+        self.context_indexer = RepoContextIndexer(Path.cwd())
+        self.second_brain = SecondBrainCommandRouter(self.memory, self.tasks, self.context_indexer)
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -121,6 +125,28 @@ class GizmoOrchestrator:
             "policy_status": status,
         }
 
+    def second_brain_demo(self) -> dict[str, Any]:
+        """Exercise GitHub-side second brain command flow."""
+        self.bootstrap()
+        commands = [
+            "/gizmo status",
+            "/gizmo context approval policy github",
+            "/gizmo remember GitHub issues are the project nervous system; keep decisions and lessons close to code.",
+            "/gizmo recall GitHub issues nervous system",
+            "/gizmo plan Make GIZMO answer repository questions from issue comments",
+        ]
+        results = [self.second_brain.route(command, actor="owner").to_dict() for command in commands]
+        self.store.write(results, "second_brain", "demo_results.json")
+        self.audit.log("agent-01", None, "second_brain.demo", "completed", commands=len(commands))
+        return {
+            "ready": all(result["status"] in {"OK", "IGNORED"} for result in results),
+            "commands": len(results),
+            "indexed_files": results[0]["artifacts"]["index"]["file_count"],
+            "memory_result": results[2]["status"],
+            "plan_tasks": len(results[4]["artifacts"].get("tasks", [])),
+            "results": results,
+        }
+
     def github_api_demo(self, project_name: str = "gizmo-github-api-demo", execute: bool = False) -> dict[str, Any]:
         """Prepare GitHub issue/PR/API sync actions with approval gates."""
         self.security.set_mode(OperatingMode.ASSISTED)
@@ -177,6 +203,7 @@ class GizmoOrchestrator:
         github_demo = self.github_workspace_demo(execute_git=False)
         github_api_demo = self.github_api_demo(project_name="gizmo-github-api-self-test", execute=False)
         policy_demo = self.policy_demo(project_name="gizmo-policy-self-test")
+        second_brain_demo = self.second_brain_demo()
         memories = self.memory.search("dependency-free testable web app", limit=10)
         github_memories = self.memory.search("GitHub task workflow", limit=5)
         result = {
@@ -186,9 +213,10 @@ class GizmoOrchestrator:
             "github_demo": github_demo,
             "github_api_demo": github_api_demo,
             "policy_demo": policy_demo,
+            "second_brain_demo": second_brain_demo,
             "memory_matches": len(memories),
             "github_memory_matches": len(github_memories),
-            "passed": boot["agents"] == 27 and len(memories) >= 2 and len(github_memories) >= 1 and github_api_demo["api_status"]["api_actions"] >= 3 and policy_demo["policy_status"]["pending_approvals"] >= 1,
+            "passed": boot["agents"] == 27 and len(memories) >= 2 and len(github_memories) >= 1 and github_api_demo["api_status"]["api_actions"] >= 3 and policy_demo["policy_status"]["pending_approvals"] >= 1 and second_brain_demo["ready"],
         }
         self.store.write(result, "monitoring", "self_test_report.json")
         self.audit.log("agent-27", None, "self_test", "passed" if result["passed"] else "failed", report=result)
@@ -207,5 +235,6 @@ class GizmoOrchestrator:
             "github": self.github.export_status(),
             "github_api": self.github_api.export_status(),
             "policy": self.policy.export_status(),
+            "second_brain": {"indexed_files": self.context_indexer.build_index()["file_count"]},
             "capabilities": self.store.read("config", "capabilities.json", default={}),
         }
