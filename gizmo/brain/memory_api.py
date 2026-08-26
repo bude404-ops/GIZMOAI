@@ -6,6 +6,7 @@ from typing import Any
 
 from gizmo.brain.embedding import LocalLexicalEmbedder
 from gizmo.brain.models import BrainMemory, BrainMemoryStatus, BrainMemoryType, BrainRelationship
+from gizmo.brain.retrieval import ContextBuilder, HybridRetriever, KnowledgeGapDetector
 from gizmo.brain.vault import ObsidianVault
 from gizmo.core.models import now_iso
 from gizmo.core.store import JsonStore
@@ -19,6 +20,9 @@ class SecondBrain:
         self.store = JsonStore(self.workspace / "structured")
         self.vault = ObsidianVault(self.workspace / "brain")
         self.embedder = embedder or LocalLexicalEmbedder()
+        self.retriever = HybridRetriever(self)
+        self.gap_detector = KnowledgeGapDetector(self)
+        self.context_builder = ContextBuilder(self)
         self.store.write({"backend": "local-json", "fallback": "markdown-vault", "provider_independent": True}, "config", "storage.json")
 
     def remember(self, memory_type: BrainMemoryType | str, title: str, content: str, *, summary: str | None = None,
@@ -73,6 +77,19 @@ class SecondBrain:
         scored = [(self.embedder.cosine(query_embedding, memory.embedding), memory) for memory in self._all_memories() if memory.status == BrainMemoryStatus.ACTIVE]
         scored.sort(key=lambda item: item[0], reverse=True)
         return [memory for score, memory in scored[:limit] if score > 0]
+
+    def hybrid_search(self, query: str, *, project: str | None = None, memory_type: BrainMemoryType | str | None = None,
+                      limit: int = 10, include_trace: bool = False) -> list[Any]:
+        results = self.retriever.search(query, project=project, memory_type=memory_type, limit=limit)
+        if include_trace:
+            return results
+        return [memory for _, memory in results]
+
+    def build_context(self, task: str, *, project: str = "Gizmo", limit: int = 12) -> Any:
+        return self.context_builder.build(task, project=project, limit=limit)
+
+    def detect_knowledge_gaps(self, task: str, *, project: str = "Gizmo") -> list[dict[str, Any]]:
+        return self.gap_detector.detect(task, project=project)
 
     def get_related_memory(self, memory_id: str) -> list[BrainMemory]:
         memory = self.get(memory_id)
@@ -165,6 +182,9 @@ class SecondBrain:
             "backend": "local-json",
             "markdown_vault": True,
             "provider_independent_embeddings": True,
+            "hybrid_retrieval": True,
+            "context_builder": True,
+            "knowledge_gap_detection": True,
         }
 
     def _persist(self, memory: BrainMemory) -> None:

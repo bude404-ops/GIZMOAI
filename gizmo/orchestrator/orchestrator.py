@@ -146,6 +146,33 @@ class GizmoOrchestrator:
         self.audit.log("agent-01", None, "brain.initialization", "passed" if result["ready"] else "failed", report=result)
         return result
 
+    def brain_phase2_demo(self) -> dict[str, Any]:
+        """Exercise intelligent recall, context building, and knowledge-gap detection."""
+        init = self.brain_initialization_demo()
+        self.brain_core.record_procedure(
+            "Hybrid retrieval procedure",
+            "Before significant work, retrieve project state, decisions, lessons, procedures, warnings, and related memories using hybrid scoring.",
+            source="phase-2",
+            source_agent="agent-26",
+            importance=8,
+            confidence=0.88,
+            tags=["procedure", "retrieval", "context"],
+            entities=["Second Brain", "Learning Core"],
+        )
+        context = self.brain_core.build_context("Build GitHub deployment learning with workflow failure detection", project="Gizmo")
+        hybrid = self.brain_core.hybrid_search("Creator approval policy GitHub workflow", project="Gizmo", include_trace=True, limit=5)
+        result = {
+            "ready": len(hybrid) > 0 and len(context.useful_context) > 0 and len(context.retrieval_trace) > 0,
+            "initialization": init["ready"],
+            "hybrid_results": len(hybrid),
+            "context_ready": context.ready,
+            "context": context.to_dict(),
+            "top_trace": hybrid[0][0].to_dict() if hybrid else None,
+        }
+        self.store.write(result, "brain", "phase2_report.json")
+        self.audit.log("agent-26", None, "brain.phase2", "passed" if result["ready"] else "failed", report=result)
+        return result
+
     def second_brain_demo(self) -> dict[str, Any]:
         """Exercise GitHub-side second brain command flow."""
         self.bootstrap()
