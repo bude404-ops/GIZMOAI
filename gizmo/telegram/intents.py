@@ -78,6 +78,11 @@ class IntentDetector:
             "activate super ai": ("cloud_brain", "activate super ai", {"raw_args": "start"}, False, 0.99),
             "run super brain": ("cloud_brain", "run super brain", {"raw_args": "run"}, False, 0.99),
             "start super brain": ("cloud_brain", "start super brain", {"raw_args": "start"}, False, 0.99),
+            "learn anything": ("universal_learn", "general", {"domain": "general"}, False, 0.97),
+            "learn from all sources": ("universal_learn", "general", {"domain": "general"}, False, 0.98),
+            "create app ideas": ("app_factory", "general", {"domain": "general"}, False, 0.98),
+            "make app ideas": ("app_factory", "general", {"domain": "general"}, False, 0.98),
+            "app factory": ("app_factory", "general", {"domain": "general"}, False, 0.98),
             "enable learning": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
             "turn on learning": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
             "turn learning on": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
@@ -104,6 +109,12 @@ class IntentDetector:
         if compact.startswith(("search memory for ", "find memory for ", "look up memory for ")):
             query = raw.split(" for ", 1)[1]
             return TelegramIntent("memory", "english", query, args={"query": query}, confidence=0.94)
+        if compact.startswith(("learn about ", "study ", "research ")):
+            domain = compact.replace("learn about ", "", 1).replace("study ", "", 1).replace("research ", "", 1).strip() or "general"
+            return TelegramIntent("universal_learn", "english", raw, args={"domain": domain, "raw_args": raw}, confidence=0.93)
+        if compact.startswith(("create app ideas from ", "make app ideas from ", "build apps from ")):
+            domain = raw.split(" from ", 1)[1] if " from " in raw.lower() else raw
+            return TelegramIntent("app_factory", "english", domain, args={"domain": domain}, confidence=0.93)
         if any(phrase in compact for phrase in ["become smarter", "make yourself smarter", "start working", "run the agents", "multi agents", "multi-agent", "cloud brain", "super brain", "super ai", "24/7", "twenty four seven"]):
             return TelegramIntent("cloud_brain", "english", raw, args={"raw_args": raw}, confidence=0.9)
         if compact.startswith(("build ", "make ", "create ", "implement ")):

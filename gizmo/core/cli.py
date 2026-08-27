@@ -11,6 +11,8 @@ from gizmo.core.store import JsonStore
 from gizmo.control.telegram_control import TelegramControlLayer
 from gizmo.control.autonomous_learning import TelegramAutonomousKnowledgeRunner
 from gizmo.control.cloud_brain import CloudAutonomousBrainRunner
+from gizmo.apps.factory import KnowledgeAppFactory
+from gizmo.knowledge.universal_sources import KnowledgeSource, UniversalKnowledgeIngestor
 from gizmo.telegram.bot import TelegramBotRuntime
 from gizmo.telegram.config import TelegramConfig
 from gizmo.telegram.router import TelegramCommandRouter
@@ -23,7 +25,7 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-learn", "app-factory-cycle", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     parser.add_argument("--user-id", default="1")
@@ -32,6 +34,8 @@ def main() -> None:
     parser.add_argument("--duration-seconds", type=int, default=3300)
     parser.add_argument("--poll-timeout", type=int, default=25)
     parser.add_argument("--max-idle-cycles", type=int, default=0)
+    parser.add_argument("--domain", default="general")
+    parser.add_argument("--source-kind", default="text")
     args = parser.parse_args()
     orchestrator = GizmoOrchestrator(args.workspace)
     if args.command == "bootstrap":
@@ -79,6 +83,15 @@ def main() -> None:
             runner.enable(chat_id=args.chat_id, source="cli")
         cycle = runner.run_cycle(chat_id=args.chat_id)
         emit(cycle.to_dict())
+    elif args.command == "universal-learn":
+        source = None
+        if args.text and args.text != "/status":
+            source = [KnowledgeSource(kind=args.source_kind, locator=args.text, title=f"Operator source: {args.domain}", domain=args.domain, trust=0.72)]
+        report = UniversalKnowledgeIngestor(orchestrator.brain_core, orchestrator.store).ingest(source, domain=args.domain)
+        emit(report.to_dict())
+    elif args.command == "app-factory-cycle":
+        report = KnowledgeAppFactory(orchestrator.brain_core, orchestrator.store).run(domain=args.domain)
+        emit(report.to_dict())
     elif args.command == "telegram-poll-once":
         config = TelegramConfig.from_env()
         control = TelegramControlLayer(orchestrator, config=config)

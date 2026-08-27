@@ -118,3 +118,7 @@ what did you learn?
 ## Super Brain organs
 
 The cloud brain cycle now runs model-backed reasoning, semantic memory indexing, and an always-on agent body. Artifacts include cloud snapshots, semantic index reports, body scorecards, and queued next actions. If no external model key is configured, local synthesis keeps the cycle safe and testable while recording that stronger model access is a next action.
+
+## Universal app-builder loop
+
+The general intelligence loop is: ingest public/domain knowledge, preserve it as searchable memory, extract app opportunities, generate app blueprints, queue safe build steps, then let the agent body score and execute allowed work. The system remains approval-gated for external side effects and never stores secrets.

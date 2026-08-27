@@ -5,9 +5,11 @@ from typing import Any
 
 from gizmo.agents.core_agents import CORE_AGENTS, core_agent_map
 from gizmo.agents.registry import AgentRegistry
+from gizmo.apps.factory import KnowledgeAppFactory
 from gizmo.brain.models import BrainMemoryType
 from gizmo.control.autonomous_learning import TelegramAutonomousKnowledgeRunner
 from gizmo.control.cloud_brain import CloudAutonomousBrainRunner
+from gizmo.knowledge.universal_sources import KnowledgeSource, UniversalKnowledgeIngestor
 from gizmo.core.models import OperatingMode, Task, TaskStatus, now_iso
 from gizmo.github.api_adapter import GitHubApiAdapter
 from gizmo.telegram.config import TelegramConfig
@@ -25,6 +27,8 @@ class TelegramControlLayer:
         self.registry = AgentRegistry(orchestrator.store, getattr(orchestrator, "agent_brain", None))
         self.autonomous_learning = TelegramAutonomousKnowledgeRunner(orchestrator, self.notifier)
         self.cloud_brain = CloudAutonomousBrainRunner(orchestrator, self.notifier)
+        self.universal_ingestor = UniversalKnowledgeIngestor(orchestrator.brain_core, orchestrator.store)
+        self.app_factory = KnowledgeAppFactory(orchestrator.brain_core, orchestrator.store)
 
     def handle_telegram_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         handlers = {
@@ -42,6 +46,8 @@ class TelegramControlLayer:
             "autonomous": self._autonomous,
             "learn": self._learn,
             "cloud_brain": self._cloud_brain,
+            "universal_learn": self._universal_learn,
+            "app_factory": self._app_factory,
             "memory": self._memory,
             "remember": self._remember,
             "logs": self._logs,
@@ -73,6 +79,7 @@ class TelegramControlLayer:
         current = next((task for task in tasks if task.get("status") in {"RUNNING", "PLANNING", "TESTING", "REVIEW"}), None)
         latest_cycle = self.autonomous_learning.latest_cycle() or {}
         latest_cloud = self.cloud_brain.latest_cycle() or {}
+        factory = self.app_factory.latest()
         message = (
             "🧠 GIZMO STATUS\n"
             "System: 🟢 ONLINE\n"
@@ -84,7 +91,8 @@ class TelegramControlLayer:
             f"Autonomous Mode: {'🟢 ENABLED' if self._autonomous_state().get('enabled') else '⚪ DISABLED'}\n"
             f"Knowledge Cycle: {latest_cycle.get('status', 'not run')}\n"
             f"Cloud Brain: {latest_cloud.get('status', 'not run')}\n"
-            f"Super Brain: reasoning {len(latest_cloud.get('reasoning', []))} / indexed {latest_cloud.get('semantic_index', {}).get('indexed_memories', 0)} / body actions {latest_cloud.get('body_scorecard', {}).get('actions', 0)}"
+            f"Super Brain: reasoning {len(latest_cloud.get('reasoning', []))} / indexed {latest_cloud.get('semantic_index', {}).get('indexed_memories', 0)} / body actions {latest_cloud.get('body_scorecard', {}).get('actions', 0)}\n"
+            f"Universal Knowledge: sources {latest_cloud.get('universal_knowledge', {}).get('sources_seen', 0)} / app backlog {factory.get('backlog_size', 0)}"
         )
         return {"ok": True, "message": message, "task_status": "COMPLETED", "actions": [{"type": "status", "data": status}]}
 
@@ -164,6 +172,33 @@ class TelegramControlLayer:
         latest = self.cloud_brain.latest_cycle() or {}
         state = self.cloud_brain.state()
         return {"ok": True, "message": f"☁️ CLOUD BRAIN\nEnabled: {state.get('enabled', False)}\nLatest: {latest.get('status', 'not run')}\nAgents: {len(latest.get('agents', []))}", "task_status": "COMPLETED"}
+
+    def _universal_learn(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        domain = intent.args.get("domain") or intent.objective or "general"
+        text = intent.args.get("raw_args") or intent.objective or domain
+        source = None
+        if text and text.lower().strip() not in {"general", "learn anything", "learn from all sources"}:
+            source = [KnowledgeSource(kind="text", locator=text, title=f"Telegram learning source: {domain}", domain=domain, trust=0.72)]
+        report = self.universal_ingestor.ingest(source, domain=domain, limit=8)
+        return {
+            "ok": True,
+            "message": f"🌐 UNIVERSAL LEARNING COMPLETE\nDomain: {domain}\nSources: {report.sources_seen}\nMemories: {len(report.memories_created)}\nApp opportunities: {len(report.app_opportunities)}",
+            "task_status": "COMPLETED",
+            "priority": "IMPORTANT",
+            "actions": [{"type": "universal_learning", "data": report.to_dict()}],
+        }
+
+    def _app_factory(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        domain = intent.args.get("domain") or intent.objective or "general"
+        report = self.app_factory.run(domain=domain)
+        titles = [item.get("title", "Untitled") for item in report.top_blueprints[:3]]
+        return {
+            "ok": True,
+            "message": f"🧩 APP FACTORY COMPLETE\nDomain: {domain}\nBlueprints: {len(report.blueprints_created)}\nBacklog: {report.backlog_size}\nTop: " + ("; ".join(titles) if titles else "None yet"),
+            "task_status": "COMPLETED",
+            "priority": "IMPORTANT",
+            "actions": [{"type": "app_factory", "data": report.to_dict()}],
+        }
 
     def _memory(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         query = intent.args.get("query") or intent.objective or "Gizmo"

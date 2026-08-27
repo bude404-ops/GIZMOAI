@@ -9,10 +9,12 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from gizmo.apps.factory import KnowledgeAppFactory
 from gizmo.brain.models import BrainMemoryType
 from gizmo.brain.semantic_index import DurableSemanticMemoryIndex
 from gizmo.control.agent_body import AlwaysOnAgentBody
 from gizmo.core.models import now_iso
+from gizmo.knowledge.universal_sources import UniversalKnowledgeIngestor
 
 
 SWARM_AGENTS = [
@@ -27,6 +29,9 @@ SWARM_AGENTS = [
 ]
 
 CLOUD_TOPICS = [
+    "general public knowledge ingestion",
+    "cross-domain source synthesis",
+    "knowledge-to-app blueprint creation",
     "always-on Telegram reliability",
     "persistent Second Brain storage",
     "multi-agent autonomous coordination",
@@ -53,6 +58,8 @@ class CloudBrainCycle:
     supervisor_plan: dict[str, Any] = field(default_factory=dict)
     body_scorecard: dict[str, Any] = field(default_factory=dict)
     reasoning: list[dict[str, Any]] = field(default_factory=list)
+    app_factory: dict[str, Any] = field(default_factory=dict)
+    universal_knowledge: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -69,6 +76,8 @@ class CloudAutonomousBrainRunner:
         self.brain = orchestrator.brain_core
         self.semantic_index = DurableSemanticMemoryIndex(self.brain)
         self.body = AlwaysOnAgentBody(orchestrator)
+        self.knowledge_ingestor = UniversalKnowledgeIngestor(self.brain, self.store)
+        self.app_factory = KnowledgeAppFactory(self.brain, self.store)
 
     def enable(self, *, chat_id: str = "", source: str = "cloud") -> dict[str, Any]:
         state = {
@@ -117,6 +126,12 @@ class CloudAutonomousBrainRunner:
             metadata={"cycle_id": cycle.cycle_id},
         )
         cycle.memories_created.append(goal.id)
+
+        ingestion = self.knowledge_ingestor.ingest(domain="general", limit=8)
+        cycle.universal_knowledge = ingestion.to_dict()
+        cycle.memories_created.extend(ingestion.memories_created)
+        factory_report = self.app_factory.run(domain="general", limit=6)
+        cycle.app_factory = factory_report.to_dict()
 
         cycle.supervisor_plan = self.body.supervisor_plan(topics=cycle.topics)
         priority_topics = cycle.supervisor_plan.get("priority_topics") or cycle.topics
@@ -197,6 +212,9 @@ class CloudAutonomousBrainRunner:
             "reasoning_providers": sorted({item.get("provider", "unknown") for item in cycle.reasoning}),
             "semantic_indexed_memories": cycle.semantic_index.get("indexed_memories", 0),
             "body_actions_scored": cycle.body_scorecard.get("actions", 0),
+            "universal_sources_seen": cycle.universal_knowledge.get("sources_seen", 0),
+            "app_blueprints_created": len(cycle.app_factory.get("blueprints_created", [])),
+            "app_backlog_size": cycle.app_factory.get("backlog_size", 0),
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }
@@ -237,5 +255,7 @@ class CloudAutonomousBrainRunner:
             f"Memories: {len(cycle.memories_created)}\n"
             f"Tasks executed: {len(cycle.tasks_executed)}\n"
             f"Gaps tracked: {len(cycle.gaps)}\n"
+            f"Universal sources: {cycle.universal_knowledge.get('sources_seen', 0)}\n"
+            f"App blueprints: {len(cycle.app_factory.get('blueprints_created', []))}\n"
             "Storage: persisted + snapshotted"
         )

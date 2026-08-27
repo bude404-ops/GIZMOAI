@@ -166,3 +166,20 @@ run super brain
 start super brain
 status
 ```
+
+## Universal knowledge and app creation
+
+GIZMO is no longer limited to market knowledge. It can ingest public/general knowledge from any domain, store it in the Second Brain, and turn the strongest patterns into app blueprints.
+
+Use Telegram:
+
+```text
+learn anything
+learn about cooking meal prep apps
+learn about language learning
+create app ideas
+create app ideas from language learning
+app factory
+```
+
+Each Super Brain cloud cycle now runs universal ingestion and an app factory before agent execution.

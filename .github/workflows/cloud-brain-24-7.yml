@@ -88,6 +88,10 @@ jobs:
             .gizmo_cloud_brain/action-results/cloud-brain-cycle.json
             .gizmo_cloud_brain/cloud/brain_snapshot.json
             .gizmo_cloud_brain/cloud/brain_history.json
-            .gizmo_cloud_brain/structured/semantic/index_report.json
-            .gizmo_cloud_brain/structured/body/scorecard.json
-            .gizmo_cloud_brain/structured/body/next_queue.json
+            .gizmo_cloud_brain/second_brain/structured/semantic/index_report.json
+            .gizmo_cloud_brain/body/scorecard.json
+            .gizmo_cloud_brain/body/next_queue.json
+            .gizmo_cloud_brain/knowledge/latest_ingestion.json
+            .gizmo_cloud_brain/knowledge/app_opportunities.json
+            .gizmo_cloud_brain/apps/latest_factory_report.json
+            .gizmo_cloud_brain/apps/blueprint_backlog.json
