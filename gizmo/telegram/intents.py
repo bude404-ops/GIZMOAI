@@ -75,6 +75,9 @@ class IntentDetector:
             "start cloud brain": ("cloud_brain", "start cloud brain", {"raw_args": "start"}, False, 0.99),
             "run the agents": ("cloud_brain", "run multi-agent cloud work", {"raw_args": "run"}, False, 0.98),
             "make yourself smarter": ("cloud_brain", "start smarter cloud work", {"raw_args": "start"}, False, 0.98),
+            "activate super ai": ("cloud_brain", "activate super ai", {"raw_args": "start"}, False, 0.99),
+            "run super brain": ("cloud_brain", "run super brain", {"raw_args": "run"}, False, 0.99),
+            "start super brain": ("cloud_brain", "start super brain", {"raw_args": "start"}, False, 0.99),
             "enable learning": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
             "turn on learning": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
             "turn learning on": ("autonomous", "on", {"raw_args": "on"}, True, 0.98),
@@ -101,7 +104,7 @@ class IntentDetector:
         if compact.startswith(("search memory for ", "find memory for ", "look up memory for ")):
             query = raw.split(" for ", 1)[1]
             return TelegramIntent("memory", "english", query, args={"query": query}, confidence=0.94)
-        if any(phrase in compact for phrase in ["become smarter", "make yourself smarter", "start working", "run the agents", "multi agents", "multi-agent", "cloud brain", "24/7", "twenty four seven"]):
+        if any(phrase in compact for phrase in ["become smarter", "make yourself smarter", "start working", "run the agents", "multi agents", "multi-agent", "cloud brain", "super brain", "super ai", "24/7", "twenty four seven"]):
             return TelegramIntent("cloud_brain", "english", raw, args={"raw_args": raw}, confidence=0.9)
         if compact.startswith(("build ", "make ", "create ", "implement ")):
             return TelegramIntent("build", "english", raw, priority="normal", confidence=0.9)

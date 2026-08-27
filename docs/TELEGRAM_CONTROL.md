@@ -149,3 +149,20 @@ make yourself smarter
 ```
 
 This enables the cloud brain state, runs the specialist swarm, records public non-secret knowledge into the Second Brain, rebuilds vault indexes, and persists a cloud snapshot for future runs.
+
+## Super Brain controls
+
+GIZMO now has three upgraded organs inside each cloud brain cycle:
+
+- Brain: model-backed reasoning with safe local fallback.
+- Memory: durable semantic search manifest and query log.
+- Body: always-on agent execution, scoring, and next-action queue.
+
+Use Telegram:
+
+```text
+activate super ai
+run super brain
+start super brain
+status
+```

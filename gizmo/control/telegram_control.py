@@ -83,7 +83,8 @@ class TelegramControlLayer:
             f"Approvals: {status.get('policy', {}).get('pending_approvals', 0)} pending\n"
             f"Autonomous Mode: {'🟢 ENABLED' if self._autonomous_state().get('enabled') else '⚪ DISABLED'}\n"
             f"Knowledge Cycle: {latest_cycle.get('status', 'not run')}\n"
-            f"Cloud Brain: {latest_cloud.get('status', 'not run')}"
+            f"Cloud Brain: {latest_cloud.get('status', 'not run')}\n"
+            f"Super Brain: reasoning {len(latest_cloud.get('reasoning', []))} / indexed {latest_cloud.get('semantic_index', {}).get('indexed_memories', 0)} / body actions {latest_cloud.get('body_scorecard', {}).get('actions', 0)}"
         )
         return {"ok": True, "message": message, "task_status": "COMPLETED", "actions": [{"type": "status", "data": status}]}
 

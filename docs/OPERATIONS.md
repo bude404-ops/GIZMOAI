@@ -114,3 +114,7 @@ status
 become smarter
 what did you learn?
 ```
+
+## Super Brain organs
+
+The cloud brain cycle now runs model-backed reasoning, semantic memory indexing, and an always-on agent body. Artifacts include cloud snapshots, semantic index reports, body scorecards, and queued next actions. If no external model key is configured, local synthesis keeps the cycle safe and testable while recording that stronger model access is a next action.

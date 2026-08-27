@@ -10,7 +10,9 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from gizmo.brain.models import BrainMemoryType
-from gizmo.core.models import Task, now_iso
+from gizmo.brain.semantic_index import DurableSemanticMemoryIndex
+from gizmo.control.agent_body import AlwaysOnAgentBody
+from gizmo.core.models import now_iso
 
 
 SWARM_AGENTS = [
@@ -47,6 +49,10 @@ class CloudBrainCycle:
     gaps: list[dict[str, Any]] = field(default_factory=list)
     vault_report: dict[str, Any] = field(default_factory=dict)
     snapshot: dict[str, Any] = field(default_factory=dict)
+    semantic_index: dict[str, Any] = field(default_factory=dict)
+    supervisor_plan: dict[str, Any] = field(default_factory=dict)
+    body_scorecard: dict[str, Any] = field(default_factory=dict)
+    reasoning: list[dict[str, Any]] = field(default_factory=list)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -61,6 +67,8 @@ class CloudAutonomousBrainRunner:
         self.notifier = notifier
         self.store = orchestrator.store
         self.brain = orchestrator.brain_core
+        self.semantic_index = DurableSemanticMemoryIndex(self.brain)
+        self.body = AlwaysOnAgentBody(orchestrator)
 
     def enable(self, *, chat_id: str = "", source: str = "cloud") -> dict[str, Any]:
         state = {
@@ -110,38 +118,42 @@ class CloudAutonomousBrainRunner:
         )
         cycle.memories_created.append(goal.id)
 
+        cycle.supervisor_plan = self.body.supervisor_plan(topics=cycle.topics)
+        priority_topics = cycle.supervisor_plan.get("priority_topics") or cycle.topics
         for index, (agent_id, lane, instruction) in enumerate(SWARM_AGENTS):
-            topic = cycle.topics[index % len(cycle.topics)]
+            topic = priority_topics[index % len(priority_topics)]
+            semantic_matches = self.semantic_index.search(topic, project="Gizmo", limit=5)
             context = self.brain.build_context(topic, project="Gizmo", limit=8)
             gaps = self.brain.detect_knowledge_gaps(topic, project="Gizmo")
             cycle.gaps.extend(gaps[:2])
-            research = self.brain.record_research(
-                f"Cloud swarm {lane}: {topic}",
-                self._agent_learning_summary(agent_id, lane, topic, instruction, context, gaps),
-                source="cloud-brain",
+            action = self.body.execute_lane(agent_id=agent_id, lane=lane, topic=topic, instruction=instruction, context=context, execute=execute_agents)
+            reasoning_memory = self.brain.record_research(
+                f"Model reasoning {lane}: {topic}",
+                self._agent_learning_summary(agent_id, lane, topic, instruction, context, gaps, semantic_matches, action),
+                source="model-reasoner",
                 source_agent=agent_id,
                 project="Gizmo",
-                importance=7,
-                confidence=0.84,
-                tags=["cloud", "swarm", lane, "knowledge"],
-                metadata={"cycle_id": cycle.cycle_id, "agent_id": agent_id, "topic": topic},
+                importance=8,
+                confidence=action.reasoning_confidence,
+                tags=["model-backed", "semantic-search", "swarm", lane],
+                metadata={"cycle_id": cycle.cycle_id, "agent_id": agent_id, "topic": topic, "task_id": action.task_id, "score": action.score},
             )
             lesson = self.brain.record_lesson(
-                f"{lane.title()} lesson: {topic}",
-                f"{agent_id} should keep improving {topic} by closing concrete gaps, recording concise lessons, and escalating unsafe work instead of acting blindly.",
-                source="cloud-brain",
+                f"{lane.title()} body lesson: {topic}",
+                f"{agent_id} used model-backed reasoning plus semantic memory before acting. Score {action.score}. Next actions: {'; '.join(action.next_actions)}",
+                source="agent-body",
                 source_agent=agent_id,
                 project="Gizmo",
-                importance=7,
-                confidence=0.86,
-                tags=["cloud", "lesson", lane],
-                metadata={"cycle_id": cycle.cycle_id, "research_id": research.id},
+                importance=8,
+                confidence=max(0.7, action.score),
+                tags=["agent-body", "lesson", lane],
+                metadata={"cycle_id": cycle.cycle_id, "reasoning_memory": reasoning_memory.id},
             )
-            self.brain.link_memories(research.id, "produced_lesson", lesson.id, 0.86)
-            cycle.memories_created.extend([research.id, lesson.id])
-            task = self._create_swarm_task(agent_id, lane, topic, execute_agents)
-            cycle.tasks_executed.append(task.id)
-            cycle.agents.append({"agent_id": agent_id, "lane": lane, "topic": topic, "task_id": task.id, "status": str(task.status), "result": task.result})
+            self.brain.link_memories(reasoning_memory.id, "produced_lesson", lesson.id, 0.88)
+            cycle.memories_created.extend([reasoning_memory.id, lesson.id])
+            cycle.tasks_executed.append(action.task_id)
+            cycle.reasoning.append({"agent_id": agent_id, "lane": lane, "provider": action.reasoning_provider, "confidence": action.reasoning_confidence, "score": action.score})
+            cycle.agents.append(action.to_dict())
 
         evaluation = self.brain.record_evaluation(
             "Cloud brain swarm evaluation",
@@ -156,6 +168,8 @@ class CloudAutonomousBrainRunner:
         )
         cycle.memories_created.append(evaluation.id)
         cycle.vault_report = self.brain.rebuild_vault_indexes()
+        cycle.semantic_index = self.semantic_index.rebuild(project="Gizmo").to_dict()
+        cycle.body_scorecard = self.body.scorecard()
         cycle.ended_at = now_iso()
         cycle.status = "COMPLETED"
         cycle.snapshot = self._snapshot(cycle)
@@ -168,14 +182,6 @@ class CloudAutonomousBrainRunner:
     def latest_cycle(self) -> dict[str, Any] | None:
         return self.store.read("cloud", "brain_latest.json", default=None)
 
-    def _create_swarm_task(self, agent_id: str, lane: str, topic: str, execute_agents: bool) -> Task:
-        task = Task(project="Gizmo", objective=f"Cloud brain {lane} lane improve: {topic}", assigned_agent=agent_id, priority=3)
-        task.record("cloud_brain", "Created by always-on cloud brain swarm")
-        self.orchestrator.tasks.create_task(task)
-        if execute_agents:
-            return self.orchestrator._execute_allowed_task(task)
-        return task
-
     def _snapshot(self, cycle: CloudBrainCycle) -> dict[str, Any]:
         registry = getattr(self.orchestrator, "agent_brain", None)
         collective = registry.collective_memory() if registry else {}
@@ -187,6 +193,10 @@ class CloudAutonomousBrainRunner:
             "memories_created": len(cycle.memories_created),
             "tasks_executed": len(cycle.tasks_executed),
             "gaps_tracked": len(cycle.gaps),
+            "reasoning_events": len(cycle.reasoning),
+            "reasoning_providers": sorted({item.get("provider", "unknown") for item in cycle.reasoning}),
+            "semantic_indexed_memories": cycle.semantic_index.get("indexed_memories", 0),
+            "body_actions_scored": cycle.body_scorecard.get("actions", 0),
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }
@@ -199,13 +209,15 @@ class CloudAutonomousBrainRunner:
         self.store.write(cycle.to_dict(), "cloud", "brain_cycles", f"{cycle.cycle_id}.json")
         self.store.append_list(cycle.to_dict(), "cloud", "brain_history.json")
 
-    def _agent_learning_summary(self, agent_id: str, lane: str, topic: str, instruction: str, context: Any, gaps: list[dict[str, Any]]) -> str:
+    def _agent_learning_summary(self, agent_id: str, lane: str, topic: str, instruction: str, context: Any, gaps: list[dict[str, Any]], semantic_matches: list[dict[str, Any]], action: Any) -> str:
         memories = getattr(context, "memories", []) or []
-        gap_names = [gap.get("topic", "unknown") for gap in gaps[:3]]
+        gap_names = [gap.get("topic") or gap.get("requirement", "unknown") for gap in gaps[:3]]
+        match_titles = [item.get("title", "unknown") for item in semantic_matches[:3]]
         return (
             f"{agent_id} handled the {lane} lane for {topic}. Directive: {instruction} "
-            f"Context memories inspected: {len(memories)}. "
+            f"Context memories inspected: {len(memories)}. Semantic matches: {', '.join(match_titles) if match_titles else 'none'}. "
             f"Gaps: {', '.join(gap_names) if gap_names else 'none detected'}. "
+            f"Reasoning provider: {action.reasoning_provider}; confidence {action.reasoning_confidence}; body score {action.score}. "
             "Outcome is stored as public, non-secret operational knowledge for future cycles."
         )
 

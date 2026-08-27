@@ -20,7 +20,16 @@ def test_cloud_brain_cycle_executes_swarm_and_persists_snapshot(tmp_path: Path):
     assert len(cycle.tasks_executed) == len(SWARM_AGENTS)
     assert len(cycle.memories_created) >= (len(SWARM_AGENTS) * 2) + 2
     assert cycle.snapshot["agent_count"] == len(SWARM_AGENTS)
+    assert len(cycle.reasoning) == len(SWARM_AGENTS)
+    assert cycle.semantic_index["indexed_memories"] >= len(cycle.memories_created)
+    assert cycle.body_scorecard["actions"] == len(SWARM_AGENTS)
+    assert cycle.snapshot["reasoning_events"] == len(SWARM_AGENTS)
+    assert "local" in cycle.snapshot["reasoning_providers"]
+    assert cycle.snapshot["body_actions_scored"] == len(SWARM_AGENTS)
     assert (tmp_path / "cloud" / "brain_snapshot.json").exists()
+    assert (tmp_path / "second_brain" / "structured" / "semantic" / "index_report.json").exists()
+    assert (tmp_path / "body" / "scorecard.json").exists()
+    assert (tmp_path / "body" / "next_queue.json").exists()
     assert (tmp_path / "cloud" / "brain_history.json").exists()
     assert (tmp_path / "second_brain" / "brain" / "indexes" / "Memory Index.md").exists()
 
