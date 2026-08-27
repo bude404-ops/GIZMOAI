@@ -31,6 +31,13 @@ class TelegramBotRuntime:
         with urllib.request.urlopen(url, timeout=timeout + 5) as response:
             return json.loads(response.read().decode("utf-8"))
 
+    def clear_webhook(self) -> dict[str, Any]:
+        if not self.config.bot_token:
+            return {"ok": False, "error": "missing TELEGRAM_BOT_TOKEN"}
+        url = f"https://api.telegram.org/bot{self.config.bot_token}/deleteWebhook?drop_pending_updates=false"
+        with urllib.request.urlopen(url, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+
     def poll_once(self, offset: int | None = None, *, send_replies: bool = False, acknowledge: bool = True, timeout: int = 30) -> dict[str, Any]:
         updates = self.get_updates(offset=offset, timeout=timeout)
         if not updates.get("ok"):
@@ -56,6 +63,14 @@ class TelegramBotRuntime:
         processed = 0
         replies_sent = 0
         errors: list[str] = []
+        webhook_cleared = False
+        try:
+            webhook = self.clear_webhook()
+            webhook_cleared = bool(webhook.get("ok"))
+            if not webhook_cleared:
+                errors.append(str(webhook.get("description") or webhook.get("error") or "webhook_clear_failed")[:120])
+        except Exception as exc:
+            errors.append(f"webhook:{type(exc).__name__}")
         last_result: dict[str, Any] | None = None
         while time.monotonic() < deadline:
             remaining = int(deadline - time.monotonic())
@@ -88,7 +103,7 @@ class TelegramBotRuntime:
                     break
             if effective_timeout < 3:
                 break
-        return {"ok": not errors, "cycles": cycles, "processed": processed, "replies_sent": replies_sent, "last_offset": offset, "errors": errors[-5:], "last_result": last_result}
+        return {"ok": not errors, "cycles": cycles, "processed": processed, "replies_sent": replies_sent, "last_offset": offset, "webhook_cleared": webhook_cleared, "errors": errors[-5:], "last_result": last_result}
 
     def _send_route_reply(self, update: dict[str, Any], routed: dict[str, Any]) -> None:
         if not self.notifier:

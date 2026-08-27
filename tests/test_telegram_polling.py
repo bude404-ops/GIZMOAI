@@ -88,9 +88,13 @@ def test_poll_loop_keeps_listening_across_multiple_batches(tmp_path: Path):
         return batches.pop(0) if batches else {"ok": True, "result": []}
 
     runtime.get_updates = fake_get_updates
+    cleared = []
+    runtime.clear_webhook = lambda: cleared.append(True) or {"ok": True, "description": "Webhook was deleted"}
     result = runtime.poll_loop(duration_seconds=12, timeout=5, max_idle_cycles=2)
 
     assert result["ok"] is True
+    assert result["webhook_cleared"] is True
+    assert cleared == [True]
     assert result["processed"] == 2
     assert result["replies_sent"] == 2
     assert any("GIZMO STATUS" in item["text"] for item in notifier.sent)
