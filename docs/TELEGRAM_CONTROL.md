@@ -183,3 +183,18 @@ app factory
 ```
 
 Each Super Brain cloud cycle now runs universal ingestion and an app factory before agent execution.
+
+## Autonomous thinking controls
+
+GIZMO can now run an internal ideation loop. It asks self-improvement questions, searches its own memory, reviews app backlog and body scorecards, generates ideas, ranks upgrade proposals, and stores chosen next actions.
+
+Use Telegram:
+
+```text
+think for yourself
+generate your own ideas
+find your own upgrades
+decide what to build next
+```
+
+The Super Brain cloud cycle runs this thinker automatically after universal knowledge ingestion and app blueprint generation.

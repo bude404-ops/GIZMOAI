@@ -12,6 +12,7 @@ from gizmo.control.telegram_control import TelegramControlLayer
 from gizmo.control.autonomous_learning import TelegramAutonomousKnowledgeRunner
 from gizmo.control.cloud_brain import CloudAutonomousBrainRunner
 from gizmo.apps.factory import KnowledgeAppFactory
+from gizmo.ideas.autonomous_thinker import AutonomousThinker
 from gizmo.knowledge.universal_sources import KnowledgeSource, UniversalKnowledgeIngestor
 from gizmo.telegram.bot import TelegramBotRuntime
 from gizmo.telegram.config import TelegramConfig
@@ -25,7 +26,7 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-learn", "app-factory-cycle", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-learn", "app-factory-cycle", "autonomous-think", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     parser.add_argument("--user-id", default="1")
@@ -91,6 +92,10 @@ def main() -> None:
         emit(report.to_dict())
     elif args.command == "app-factory-cycle":
         report = KnowledgeAppFactory(orchestrator.brain_core, orchestrator.store).run(domain=args.domain)
+        emit(report.to_dict())
+    elif args.command == "autonomous-think":
+        topics = [part.strip() for part in (args.text or "").split(",") if part.strip() and part.strip() != "/status"]
+        report = AutonomousThinker(orchestrator.brain_core, orchestrator.store).think(cycle_id="cli", topics=topics)
         emit(report.to_dict())
     elif args.command == "telegram-poll-once":
         config = TelegramConfig.from_env()

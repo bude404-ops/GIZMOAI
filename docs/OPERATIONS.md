@@ -122,3 +122,7 @@ The cloud brain cycle now runs model-backed reasoning, semantic memory indexing,
 ## Universal app-builder loop
 
 The general intelligence loop is: ingest public/domain knowledge, preserve it as searchable memory, extract app opportunities, generate app blueprints, queue safe build steps, then let the agent body score and execute allowed work. The system remains approval-gated for external side effects and never stores secrets.
+
+## Autonomous thinker
+
+Every full Super Brain cycle now includes a self-questioning pass. The thinker reads recent cloud state, app blueprints, body next-actions, scorecards, and semantic memories. It produces ranked ideas, upgrade proposals, and chosen next actions. Safe items enter the queue; risky items remain approval-gated.

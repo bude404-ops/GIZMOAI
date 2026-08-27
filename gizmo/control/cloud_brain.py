@@ -14,6 +14,7 @@ from gizmo.brain.models import BrainMemoryType
 from gizmo.brain.semantic_index import DurableSemanticMemoryIndex
 from gizmo.control.agent_body import AlwaysOnAgentBody
 from gizmo.core.models import now_iso
+from gizmo.ideas.autonomous_thinker import AutonomousThinker
 from gizmo.knowledge.universal_sources import UniversalKnowledgeIngestor
 
 
@@ -29,6 +30,8 @@ SWARM_AGENTS = [
 ]
 
 CLOUD_TOPICS = [
+    "autonomous idea generation",
+    "self-upgrade proposal ranking",
     "general public knowledge ingestion",
     "cross-domain source synthesis",
     "knowledge-to-app blueprint creation",
@@ -60,6 +63,7 @@ class CloudBrainCycle:
     reasoning: list[dict[str, Any]] = field(default_factory=list)
     app_factory: dict[str, Any] = field(default_factory=dict)
     universal_knowledge: dict[str, Any] = field(default_factory=dict)
+    autonomous_thinking: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -78,6 +82,7 @@ class CloudAutonomousBrainRunner:
         self.body = AlwaysOnAgentBody(orchestrator)
         self.knowledge_ingestor = UniversalKnowledgeIngestor(self.brain, self.store)
         self.app_factory = KnowledgeAppFactory(self.brain, self.store)
+        self.thinker = AutonomousThinker(self.brain, self.store)
 
     def enable(self, *, chat_id: str = "", source: str = "cloud") -> dict[str, Any]:
         state = {
@@ -132,6 +137,9 @@ class CloudAutonomousBrainRunner:
         cycle.memories_created.extend(ingestion.memories_created)
         factory_report = self.app_factory.run(domain="general", limit=6)
         cycle.app_factory = factory_report.to_dict()
+        thinking = self.thinker.think(cycle_id=cycle.cycle_id, topics=cycle.topics, limit=8)
+        cycle.autonomous_thinking = thinking.to_dict()
+        cycle.memories_created.extend(thinking.memories_created)
 
         cycle.supervisor_plan = self.body.supervisor_plan(topics=cycle.topics)
         priority_topics = cycle.supervisor_plan.get("priority_topics") or cycle.topics
@@ -215,6 +223,9 @@ class CloudAutonomousBrainRunner:
             "universal_sources_seen": cycle.universal_knowledge.get("sources_seen", 0),
             "app_blueprints_created": len(cycle.app_factory.get("blueprints_created", [])),
             "app_backlog_size": cycle.app_factory.get("backlog_size", 0),
+            "autonomous_ideas_created": len(cycle.autonomous_thinking.get("ideas", [])),
+            "upgrade_proposals_created": len(cycle.autonomous_thinking.get("upgrades", [])),
+            "chosen_next_actions": len(cycle.autonomous_thinking.get("chosen_next", [])),
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }
@@ -257,5 +268,7 @@ class CloudAutonomousBrainRunner:
             f"Gaps tracked: {len(cycle.gaps)}\n"
             f"Universal sources: {cycle.universal_knowledge.get('sources_seen', 0)}\n"
             f"App blueprints: {len(cycle.app_factory.get('blueprints_created', []))}\n"
+            f"Ideas generated: {len(cycle.autonomous_thinking.get('ideas', []))}\n"
+            f"Upgrade proposals: {len(cycle.autonomous_thinking.get('upgrades', []))}\n"
             "Storage: persisted + snapshotted"
         )

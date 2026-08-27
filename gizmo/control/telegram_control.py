@@ -9,6 +9,7 @@ from gizmo.apps.factory import KnowledgeAppFactory
 from gizmo.brain.models import BrainMemoryType
 from gizmo.control.autonomous_learning import TelegramAutonomousKnowledgeRunner
 from gizmo.control.cloud_brain import CloudAutonomousBrainRunner
+from gizmo.ideas.autonomous_thinker import AutonomousThinker
 from gizmo.knowledge.universal_sources import KnowledgeSource, UniversalKnowledgeIngestor
 from gizmo.core.models import OperatingMode, Task, TaskStatus, now_iso
 from gizmo.github.api_adapter import GitHubApiAdapter
@@ -29,6 +30,7 @@ class TelegramControlLayer:
         self.cloud_brain = CloudAutonomousBrainRunner(orchestrator, self.notifier)
         self.universal_ingestor = UniversalKnowledgeIngestor(orchestrator.brain_core, orchestrator.store)
         self.app_factory = KnowledgeAppFactory(orchestrator.brain_core, orchestrator.store)
+        self.thinker = AutonomousThinker(orchestrator.brain_core, orchestrator.store)
 
     def handle_telegram_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         handlers = {
@@ -48,6 +50,7 @@ class TelegramControlLayer:
             "cloud_brain": self._cloud_brain,
             "universal_learn": self._universal_learn,
             "app_factory": self._app_factory,
+            "autonomous_think": self._autonomous_think,
             "memory": self._memory,
             "remember": self._remember,
             "logs": self._logs,
@@ -80,6 +83,7 @@ class TelegramControlLayer:
         latest_cycle = self.autonomous_learning.latest_cycle() or {}
         latest_cloud = self.cloud_brain.latest_cycle() or {}
         factory = self.app_factory.latest()
+        thinking = self.thinker.latest()
         message = (
             "🧠 GIZMO STATUS\n"
             "System: 🟢 ONLINE\n"
@@ -92,7 +96,8 @@ class TelegramControlLayer:
             f"Knowledge Cycle: {latest_cycle.get('status', 'not run')}\n"
             f"Cloud Brain: {latest_cloud.get('status', 'not run')}\n"
             f"Super Brain: reasoning {len(latest_cloud.get('reasoning', []))} / indexed {latest_cloud.get('semantic_index', {}).get('indexed_memories', 0)} / body actions {latest_cloud.get('body_scorecard', {}).get('actions', 0)}\n"
-            f"Universal Knowledge: sources {latest_cloud.get('universal_knowledge', {}).get('sources_seen', 0)} / app backlog {factory.get('backlog_size', 0)}"
+            f"Universal Knowledge: sources {latest_cloud.get('universal_knowledge', {}).get('sources_seen', 0)} / app backlog {factory.get('backlog_size', 0)}\n"
+            f"Autonomous Thinking: ideas {len(thinking.get('ideas', []))} / upgrades {len(thinking.get('upgrades', []))}"
         )
         return {"ok": True, "message": message, "task_status": "COMPLETED", "actions": [{"type": "status", "data": status}]}
 
@@ -198,6 +203,19 @@ class TelegramControlLayer:
             "task_status": "COMPLETED",
             "priority": "IMPORTANT",
             "actions": [{"type": "app_factory", "data": report.to_dict()}],
+        }
+
+    def _autonomous_think(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        raw = intent.args.get("raw_args") or intent.objective or "self improvement, app ideas, upgrades"
+        topics = [part.strip() for part in raw.replace(" and ", ",").split(",") if part.strip()]
+        report = self.thinker.think(cycle_id=f"telegram-{envelope.task_id}", topics=topics)
+        top = [item.get("title", "Untitled") for item in report.chosen_next[:3]]
+        return {
+            "ok": True,
+            "message": f"🧠 AUTONOMOUS THINKING COMPLETE\nIdeas: {len(report.ideas)}\nUpgrade proposals: {len(report.upgrades)}\nChosen next: " + ("; ".join(top) if top else "None yet"),
+            "task_status": "COMPLETED",
+            "priority": "IMPORTANT",
+            "actions": [{"type": "autonomous_thinking", "data": report.to_dict()}],
         }
 
     def _memory(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:

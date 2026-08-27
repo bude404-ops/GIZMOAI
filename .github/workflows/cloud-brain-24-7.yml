@@ -95,3 +95,6 @@ jobs:
             .gizmo_cloud_brain/knowledge/app_opportunities.json
             .gizmo_cloud_brain/apps/latest_factory_report.json
             .gizmo_cloud_brain/apps/blueprint_backlog.json
+            .gizmo_cloud_brain/ideas/latest_thinking.json
+            .gizmo_cloud_brain/ideas/upgrade_queue.json
+            .gizmo_cloud_brain/ideas/chosen_next.json
