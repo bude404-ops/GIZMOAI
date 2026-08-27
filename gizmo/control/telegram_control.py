@@ -321,6 +321,16 @@ class TelegramControlLayer:
             decided = self.orchestrator.policy.decide(parts[0], parts[1], True, "Approved from Telegram")
             if decided.action == "autonomous_enable":
                 self.autonomous_learning.enable(chat_id=envelope.chat_id, source="telegram-approval")
+            universal_record = self.orchestrator.universal_execution.find_by_approval(decided.id)
+            if universal_record is not None and decided.action == "universal_execute":
+                released = self.orchestrator.universal_execution.release_after_approval(universal_record.execution_id, approval=decided, task_creator=self.orchestrator._create_universal_task_from_step)
+                return {
+                    "ok": True,
+                    "message": f"✅ UNIVERSAL EXECUTION APPROVED\nApproval: {decided.id}\nExecution: {released.execution_id}\nTasks released: {len(released.task_ids)}\nStatus: {released.status}",
+                    "task_status": released.status,
+                    "priority": "IMPORTANT",
+                    "actions": [{"type": "universal_approval_release", "data": released.to_dict()}],
+                }
             return {"ok": True, "message": f"✅ APPROVED\n{decided.id}\nAction: {decided.action}", "task_status": "COMPLETED", "priority": "IMPORTANT"}
         except Exception:
             return {"ok": False, "message": "Approval failed. Verify the approval ID and code.", "task_status": "FAILED", "priority": "SECURITY"}

@@ -8,7 +8,7 @@ Creator request -> intent classification -> task decomposition -> capability dis
 
 Safe executable requests also pass through an execution ledger:
 
-route plan -> task IDs -> dependency chain -> approval state -> step status -> safe runner -> evidence -> refreshable execution record.
+route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> evidence -> refreshable execution record.
 
 ## Capability Registry
 
@@ -105,6 +105,7 @@ The proof covers:
 - trading remaining one capability, not the core
 - execution ledger handoff from universal route to traceable task IDs
 - dependency-aware execution runner advancing ready steps only
+- approval release from gated execution into queued task chain
 
 ## Execution Handoff
 
@@ -121,6 +122,13 @@ python -m gizmo.core.cli universal-run --max-steps 1
 python -m gizmo.core.cli universal-run --execution-id <execution_id>
 ```
 
+Release a gated universal execution after explicit approval:
+
+```bash
+python -m gizmo.core.cli universal-approve --approval-id <approval_id> --approval-code <approval_code>
+python -m gizmo.core.cli universal-approve --approval-id <approval_id> --approval-code <approval_code> --run-after-approval
+```
+
 The result includes an `execution` record with:
 
 - execution_id
@@ -132,5 +140,6 @@ The result includes an `execution` record with:
 - acceptance_checks
 - verification evidence
 - runner evidence showing how many ready steps advanced and what remained blocked/skipped
+- approval request and release evidence for gated executions
 
-Approval-required requests create a ledger but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action.
+Approval-required requests create a ledger and approval request but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action. Approval release creates the task chain; it does not run unless `--run-after-approval` is explicitly used.

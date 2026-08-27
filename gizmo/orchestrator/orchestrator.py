@@ -105,7 +105,13 @@ class GizmoOrchestrator:
             unreal_report = self.unreal_integration.inspect(objective=request).to_dict()
         if category == "ai_generation":
             generation_record = self.generation.record_request(self._infer_generation_modality(request), request, project=project).to_dict()
-        execution_record = self.universal_execution.create_from_plan(plan, project=project).to_dict() if execute else None
+        execution_record = None
+        if execute:
+            record = self.universal_execution.create_from_plan(plan, project=project)
+            if plan.approval_required:
+                approval = self.policy.request_approval(project, "universal_execute", "agent-01", f"Universal execution requires approval: {request}", "high")
+                record = self.universal_execution.attach_approval(record.execution_id, approval)
+            execution_record = record.to_dict()
         result = {
             "ready": True,
             "plan": plan.to_dict(),
@@ -131,6 +137,20 @@ class GizmoOrchestrator:
         self.audit.log("agent-01", None, "universal.run", refreshed.status, execution_id=refreshed.execution_id, ran=refreshed.evidence.get("runner", {}).get("ran", 0))
         return result
 
+    def approve_universal_execution(self, approval_id: str, approval_code: str, *, run: bool = False) -> dict[str, Any]:
+        """Approve a waiting universal execution and release its planned steps into tasks."""
+        record = self.universal_execution.find_by_approval(approval_id)
+        if record is None:
+            return {"ready": False, "status": "NOT_FOUND", "message": "No universal execution is linked to that approval."}
+        approval = self.policy.decide(approval_id, approval_code, True, "Approved universal execution release")
+        released = self.universal_execution.release_after_approval(record.execution_id, approval=approval, task_creator=self._create_universal_task_from_step)
+        result = {"ready": True, "execution": released.to_dict(), "approval": approval.to_dict()}
+        if run:
+            result["run"] = self.run_universal_execution(released.execution_id)
+        self.store.write(result, "universal", "latest_approval_release.json")
+        self.audit.log("agent-01", None, "universal.approve", released.status, execution_id=released.execution_id, approval_id=approval_id)
+        return result
+
     def universal_acceptance_demo(self) -> dict[str, Any]:
         """Exercise the required general-purpose acceptance paths without unsafe side effects."""
         examples = {
@@ -154,6 +174,7 @@ class GizmoOrchestrator:
             "memory_retrieval_planned": bool(routes["memory"]["plan"]["context_memory_ids"] or routes["memory"]["plan"]["memory_plan"]),
             "execution_ledger": bool(self.universal_route("Build a small verified automation script.", execute=True)["execution"]["task_ids"]),
             "execution_runner": self._acceptance_runner_check(),
+            "approval_release": self._acceptance_approval_release_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -166,6 +187,14 @@ class GizmoOrchestrator:
         run = self.run_universal_execution(route["execution"]["execution_id"])
         execution = run["execution"]
         return execution["status"] in {"QUEUED", "COMPLETED"} and execution["evidence"]["runner"]["ran"] >= 1
+
+    def _acceptance_approval_release_check(self) -> bool:
+        route = self.universal_route("Deploy the production app after checks pass.", execute=True)
+        approval = route["execution"]["evidence"].get("approval_request", {})
+        if not approval:
+            return False
+        released = self.approve_universal_execution(approval["id"], approval["approval_code"])["execution"]
+        return released["status"] == "QUEUED" and bool(released["task_ids"]) and released["evidence"].get("approval_decision") == "APPROVED"
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:
@@ -221,6 +250,18 @@ class GizmoOrchestrator:
         self.agent_brain.after_task(task, worked=["bootstrap execution", "central Brain integration"])
         self.audit.log(task.assigned_agent, task.id, "execute_task", "completed", task_result=task.result)
         return task
+
+    def _create_universal_task_from_step(self, step: dict[str, Any], dependencies: list[str]) -> str:
+        task = Task(
+            project="Gizmo",
+            objective=f"{step['name']}: {step.get('objective') or step.get('verification')}",
+            assigned_agent=step["assigned_agent"],
+            priority=min(9, int(step.get("order", 5))),
+            dependencies=dependencies,
+        )
+        task.record("universal_approval_release", "Task created after explicit approval", capability=step.get("capability"), verification=step.get("verification"))
+        self.tasks.create_task(task)
+        return task.id
 
     def policy_demo(self, project_name: str = "gizmo-policy-demo") -> dict[str, Any]:
         """Exercise approval gates without authorizing production/destructive work."""

@@ -129,3 +129,25 @@ def test_universal_runner_refuses_approval_required_execution(tmp_path):
     assert run["status"] == "WAITING_APPROVAL"
     assert run["evidence"]["runner"]["ran"] == 0
     assert run["evidence"]["runner"]["blocked"] == "approval required"
+
+
+def test_universal_approval_release_creates_task_chain(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Deploy the production app now.", execute=True)
+    approval = result["execution"]["evidence"]["approval_request"]
+
+    released = orchestrator.approve_universal_execution(approval["id"], approval["approval_code"])["execution"]
+    assert released["status"] == "QUEUED"
+    assert released["evidence"]["approval_decision"] == "APPROVED"
+    assert released["evidence"]["release"]["released"] is True
+    assert len(released["task_ids"]) == len(released["steps"])
+    assert all(step["task_id"] and step["blocked_reason"] is None for step in released["steps"])
+
+
+def test_universal_approval_release_can_run_after_approval(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Deploy the production app now.", execute=True)
+    approval = result["execution"]["evidence"]["approval_request"]
+    released = orchestrator.approve_universal_execution(approval["id"], approval["approval_code"], run=True)
+    assert released["execution"]["status"] == "QUEUED"
+    assert released["run"]["execution"]["status"] == "COMPLETED"

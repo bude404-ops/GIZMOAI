@@ -92,6 +92,15 @@ class UniversalExecutionLedger:
         self._persist(record)
         return record
 
+    def attach_approval(self, execution_id: str, approval: Any) -> UniversalExecutionRecord:
+        record = self.refresh(execution_id)
+        record.approval_required = True
+        record.status = "WAITING_APPROVAL"
+        record.evidence["approval_request"] = approval.to_dict() if hasattr(approval, "to_dict") else dict(approval)
+        record.evidence["approval_decision"] = "PENDING"
+        self._persist(record)
+        return record
+
     def acceptance_checks(self, plan: Any) -> list[str]:
         checks = [
             "Every executable step has a task id or an explicit blocked reason",
@@ -155,7 +164,8 @@ class UniversalExecutionLedger:
         executions remain blocked, and dependency order is enforced from task records.
         """
         record = self.refresh(execution_id)
-        if record.approval_required or record.status == "WAITING_APPROVAL":
+        approved = record.evidence.get("approval_decision") == "APPROVED"
+        if (record.approval_required and not approved) or record.status == "WAITING_APPROVAL":
             record.evidence["runner"] = {"ran": 0, "blocked": "approval required", "updated_at": now_iso()}
             self._persist(record)
             return record
@@ -178,6 +188,46 @@ class UniversalExecutionLedger:
         refreshed.evidence["runner"] = {"ran": ran, "skipped": skipped, "updated_at": now_iso()}
         self._persist(refreshed)
         return refreshed
+
+    def find_by_approval(self, approval_id: str) -> UniversalExecutionRecord | None:
+        folder = self.store.path("universal", "executions")
+        if not folder.exists():
+            return None
+        for path in folder.glob("*.json"):
+            data = self.store.read("universal", "executions", path.name)
+            approval = data.get("evidence", {}).get("approval_request", {})
+            if approval.get("id") == approval_id:
+                return UniversalExecutionRecord(**data)
+        return None
+
+    def release_after_approval(self, execution_id: str, *, approval: Any, task_creator: Any) -> UniversalExecutionRecord:
+        record = self.refresh(execution_id)
+        approval_status = getattr(approval, "status", None) or approval.get("status")
+        if approval_status != "APPROVED":
+            record.evidence["approval_decision"] = approval_status or "UNKNOWN"
+            record.evidence["release"] = {"released": False, "reason": "approval not granted", "updated_at": now_iso()}
+            self._persist(record)
+            return record
+        task_ids: list[str] = []
+        previous: list[str] = []
+        for step in record.steps:
+            if step.get("task_id"):
+                task_ids.append(step["task_id"])
+                previous = [step["task_id"]]
+                continue
+            task_id = task_creator(step, previous)
+            step["task_id"] = task_id
+            step["status"] = TaskStatus.QUEUED.value
+            step["blocked_reason"] = None
+            task_ids.append(task_id)
+            previous = [task_id]
+        record.task_ids = task_ids
+        record.status = "QUEUED" if task_ids else "PLANNED"
+        record.evidence["approval_request"] = approval.to_dict() if hasattr(approval, "to_dict") else dict(approval)
+        record.evidence["approval_decision"] = "APPROVED"
+        record.evidence["release"] = {"released": bool(task_ids), "task_count": len(task_ids), "updated_at": now_iso()}
+        self._persist(record)
+        return record
 
     def _persist(self, record: UniversalExecutionRecord) -> None:
         data = record.to_dict()

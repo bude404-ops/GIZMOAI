@@ -59,6 +59,20 @@ def test_approval_buttons_are_bound_to_unique_action_id(tmp_path: Path):
     assert "approve-" in button_data
 
 
+def test_telegram_approval_releases_universal_execution(tmp_path: Path):
+    _, router = make_router(tmp_path)
+    gated = router.route_text("101", "201", "Build a production release automation script now.")
+    execution = gated.actions[0]["data"]["execution"]
+    approval = execution["evidence"]["approval_request"]
+
+    approved = router.route_text("101", "201", f"/approve {approval['id']} {approval['approval_code']}")
+    assert approved.ok is True
+    assert "UNIVERSAL EXECUTION APPROVED" in approved.message
+    released = approved.actions[0]["data"]
+    assert released["status"] == "QUEUED"
+    assert released["task_ids"]
+
+
 def test_explicit_memory_rejects_secret_like_text(tmp_path: Path):
     _, router = make_router(tmp_path)
     result = router.route_text("101", "201", "/remember my token is abc")
