@@ -10,6 +10,7 @@ from gizmo.security.security_system import SecuritySystem
 from gizmo.core.store import JsonStore
 from gizmo.control.telegram_control import TelegramControlLayer
 from gizmo.control.autonomous_learning import TelegramAutonomousKnowledgeRunner
+from gizmo.control.cloud_brain import CloudAutonomousBrainRunner
 from gizmo.telegram.bot import TelegramBotRuntime
 from gizmo.telegram.config import TelegramConfig
 from gizmo.telegram.router import TelegramCommandRouter
@@ -22,7 +23,7 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     parser.add_argument("--user-id", default="1")
@@ -69,6 +70,14 @@ def main() -> None:
         if args.text.lower() in {"enable", "on", "true"}:
             control.autonomous_learning.enable(chat_id=args.chat_id, source="cli")
         cycle = control.autonomous_learning.run_cycle(chat_id=args.chat_id)
+        emit(cycle.to_dict())
+    elif args.command == "cloud-brain-cycle":
+        config = TelegramConfig.from_env()
+        control = TelegramControlLayer(orchestrator, config=config)
+        runner = CloudAutonomousBrainRunner(orchestrator, notifier=control.notifier)
+        if args.text.lower() in {"enable", "on", "true"}:
+            runner.enable(chat_id=args.chat_id, source="cli")
+        cycle = runner.run_cycle(chat_id=args.chat_id)
         emit(cycle.to_dict())
     elif args.command == "telegram-poll-once":
         config = TelegramConfig.from_env()

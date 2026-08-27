@@ -1,0 +1,229 @@
+"""Always-on cloud learning runner for GIZMO.
+
+This module keeps autonomous learning state portable across cloud runs by writing
+append-only snapshots, agent work packets, and Second Brain vault exports into the
+configured workspace.
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+from gizmo.brain.models import BrainMemoryType
+from gizmo.core.models import Task, now_iso
+
+
+SWARM_AGENTS = [
+    ("agent-02", "research", "Find fresh public knowledge and summarize what matters."),
+    ("agent-08", "database", "Preserve state, schemas, and storage lessons."),
+    ("agent-09", "devops", "Improve cloud runtime, renewal, and failure recovery."),
+    ("agent-13", "ai", "Improve agent reasoning, prompts, and coordination."),
+    ("agent-20", "data", "Structure observations into datasets and signals."),
+    ("agent-23", "docs", "Convert findings into operator-readable knowledge."),
+    ("agent-26", "evolution", "Identify how GIZMO should improve itself next."),
+    ("agent-27", "quality", "Synthesize results and reject weak learning."),
+]
+
+CLOUD_TOPICS = [
+    "always-on Telegram reliability",
+    "persistent Second Brain storage",
+    "multi-agent autonomous coordination",
+    "knowledge gap closure",
+    "safe cloud learning cadence",
+    "operator-visible summaries",
+]
+
+
+@dataclass
+class CloudBrainCycle:
+    cycle_id: str
+    status: str
+    started_at: str
+    ended_at: str | None = None
+    topics: list[str] = field(default_factory=list)
+    agents: list[dict[str, Any]] = field(default_factory=list)
+    memories_created: list[str] = field(default_factory=list)
+    tasks_executed: list[str] = field(default_factory=list)
+    gaps: list[dict[str, Any]] = field(default_factory=list)
+    vault_report: dict[str, Any] = field(default_factory=dict)
+    snapshot: dict[str, Any] = field(default_factory=dict)
+    notification: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+class CloudAutonomousBrainRunner:
+    """Runs GIZMO's cloud brain as a policy-aware multi-agent learning swarm."""
+
+    def __init__(self, orchestrator: Any, notifier: Any | None = None) -> None:
+        self.orchestrator = orchestrator
+        self.notifier = notifier
+        self.store = orchestrator.store
+        self.brain = orchestrator.brain_core
+
+    def enable(self, *, chat_id: str = "", source: str = "cloud") -> dict[str, Any]:
+        state = {
+            "enabled": True,
+            "paused": False,
+            "emergency": False,
+            "updated_at": now_iso(),
+            "source": source,
+            "chat_id": str(chat_id),
+            "mode": "cloud-autonomous-brain",
+            "cadence": "continuous-renewed-cloud-loop",
+            "storage": ["workspace-json", "second-brain-vault", "workflow-cache", "workflow-artifact"],
+            "swarm_agents": [agent_id for agent_id, _, _ in SWARM_AGENTS],
+            "boundaries": ["admin-only-telegram", "approval-gated-sensitive-actions", "no-secret-memory", "public-knowledge-only"],
+        }
+        self.store.write(state, "control", "cloud_brain_mode.json")
+        self.store.write(state, "control", "autonomous_mode.json")
+        return state
+
+    def state(self) -> dict[str, Any]:
+        return self.store.read("control", "cloud_brain_mode.json", default={"enabled": False, "paused": False, "emergency": False})
+
+    def run_cycle(self, *, chat_id: str | None = None, topics: list[str] | None = None, execute_agents: bool = True) -> CloudBrainCycle:
+        state = self.state()
+        cycle = CloudBrainCycle(
+            cycle_id=f"cloud-brain-{now_iso().replace(':', '').replace('.', '').replace('-', '')}",
+            status="SKIPPED",
+            started_at=now_iso(),
+            topics=topics or CLOUD_TOPICS,
+        )
+        if not state.get("enabled") or state.get("paused") or state.get("emergency"):
+            cycle.notification = self._format_skip(state)
+            self._persist(cycle)
+            return cycle
+
+        cycle.status = "RUNNING"
+        goal = self.brain.record_goal(
+            "Always-on cloud brain learning",
+            "Run a renewed cloud learning cycle that uses specialist agents, persists storage snapshots, and improves GIZMO without bypassing approvals.",
+            source="cloud-brain",
+            source_agent="agent-26",
+            project="Gizmo",
+            importance=9,
+            confidence=0.92,
+            tags=["cloud", "autonomous", "multi-agent", "learning"],
+            metadata={"cycle_id": cycle.cycle_id},
+        )
+        cycle.memories_created.append(goal.id)
+
+        for index, (agent_id, lane, instruction) in enumerate(SWARM_AGENTS):
+            topic = cycle.topics[index % len(cycle.topics)]
+            context = self.brain.build_context(topic, project="Gizmo", limit=8)
+            gaps = self.brain.detect_knowledge_gaps(topic, project="Gizmo")
+            cycle.gaps.extend(gaps[:2])
+            research = self.brain.record_research(
+                f"Cloud swarm {lane}: {topic}",
+                self._agent_learning_summary(agent_id, lane, topic, instruction, context, gaps),
+                source="cloud-brain",
+                source_agent=agent_id,
+                project="Gizmo",
+                importance=7,
+                confidence=0.84,
+                tags=["cloud", "swarm", lane, "knowledge"],
+                metadata={"cycle_id": cycle.cycle_id, "agent_id": agent_id, "topic": topic},
+            )
+            lesson = self.brain.record_lesson(
+                f"{lane.title()} lesson: {topic}",
+                f"{agent_id} should keep improving {topic} by closing concrete gaps, recording concise lessons, and escalating unsafe work instead of acting blindly.",
+                source="cloud-brain",
+                source_agent=agent_id,
+                project="Gizmo",
+                importance=7,
+                confidence=0.86,
+                tags=["cloud", "lesson", lane],
+                metadata={"cycle_id": cycle.cycle_id, "research_id": research.id},
+            )
+            self.brain.link_memories(research.id, "produced_lesson", lesson.id, 0.86)
+            cycle.memories_created.extend([research.id, lesson.id])
+            task = self._create_swarm_task(agent_id, lane, topic, execute_agents)
+            cycle.tasks_executed.append(task.id)
+            cycle.agents.append({"agent_id": agent_id, "lane": lane, "topic": topic, "task_id": task.id, "status": str(task.status), "result": task.result})
+
+        evaluation = self.brain.record_evaluation(
+            "Cloud brain swarm evaluation",
+            f"Cycle {cycle.cycle_id} ran {len(SWARM_AGENTS)} agent lanes, created {len(cycle.memories_created)} memories, executed {len(cycle.tasks_executed)} tasks, and tracked {len(cycle.gaps)} knowledge gaps.",
+            source="cloud-brain",
+            source_agent="agent-27",
+            project="Gizmo",
+            importance=8,
+            confidence=0.9,
+            tags=["cloud", "evaluation", "swarm"],
+            metadata={"cycle_id": cycle.cycle_id},
+        )
+        cycle.memories_created.append(evaluation.id)
+        cycle.vault_report = self.brain.rebuild_vault_indexes()
+        cycle.ended_at = now_iso()
+        cycle.status = "COMPLETED"
+        cycle.snapshot = self._snapshot(cycle)
+        cycle.notification = self._format_complete(cycle)
+        self._persist(cycle)
+        if chat_id and self.notifier:
+            self.notifier.queue(chat_id, cycle.notification, "IMPORTANT")
+        return cycle
+
+    def latest_cycle(self) -> dict[str, Any] | None:
+        return self.store.read("cloud", "brain_latest.json", default=None)
+
+    def _create_swarm_task(self, agent_id: str, lane: str, topic: str, execute_agents: bool) -> Task:
+        task = Task(project="Gizmo", objective=f"Cloud brain {lane} lane improve: {topic}", assigned_agent=agent_id, priority=3)
+        task.record("cloud_brain", "Created by always-on cloud brain swarm")
+        self.orchestrator.tasks.create_task(task)
+        if execute_agents:
+            return self.orchestrator._execute_allowed_task(task)
+        return task
+
+    def _snapshot(self, cycle: CloudBrainCycle) -> dict[str, Any]:
+        registry = getattr(self.orchestrator, "agent_brain", None)
+        collective = registry.collective_memory() if registry else {}
+        snapshot = {
+            "cycle_id": cycle.cycle_id,
+            "generated_at": now_iso(),
+            "status": cycle.status,
+            "agent_count": len(cycle.agents),
+            "memories_created": len(cycle.memories_created),
+            "tasks_executed": len(cycle.tasks_executed),
+            "gaps_tracked": len(cycle.gaps),
+            "vault_report": cycle.vault_report,
+            "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
+        }
+        self.store.write(snapshot, "cloud", "brain_snapshot.json")
+        self.store.append_list(snapshot, "cloud", "brain_snapshots.json")
+        return snapshot
+
+    def _persist(self, cycle: CloudBrainCycle) -> None:
+        self.store.write(cycle.to_dict(), "cloud", "brain_latest.json")
+        self.store.write(cycle.to_dict(), "cloud", "brain_cycles", f"{cycle.cycle_id}.json")
+        self.store.append_list(cycle.to_dict(), "cloud", "brain_history.json")
+
+    def _agent_learning_summary(self, agent_id: str, lane: str, topic: str, instruction: str, context: Any, gaps: list[dict[str, Any]]) -> str:
+        memories = getattr(context, "memories", []) or []
+        gap_names = [gap.get("topic", "unknown") for gap in gaps[:3]]
+        return (
+            f"{agent_id} handled the {lane} lane for {topic}. Directive: {instruction} "
+            f"Context memories inspected: {len(memories)}. "
+            f"Gaps: {', '.join(gap_names) if gap_names else 'none detected'}. "
+            "Outcome is stored as public, non-secret operational knowledge for future cycles."
+        )
+
+    def _format_skip(self, state: dict[str, Any]) -> str:
+        return (
+            "☁️ CLOUD BRAIN SKIPPED\n"
+            f"Enabled: {state.get('enabled', False)}\n"
+            f"Paused: {state.get('paused', False)}\n"
+            f"Emergency: {state.get('emergency', False)}"
+        )
+
+    def _format_complete(self, cycle: CloudBrainCycle) -> str:
+        return (
+            "☁️ CLOUD BRAIN CYCLE COMPLETE\n"
+            f"Cycle: {cycle.cycle_id}\n"
+            f"Agents: {len(cycle.agents)}\n"
+            f"Memories: {len(cycle.memories_created)}\n"
+            f"Tasks executed: {len(cycle.tasks_executed)}\n"
+            f"Gaps tracked: {len(cycle.gaps)}\n"
+            "Storage: persisted + snapshotted"
+        )

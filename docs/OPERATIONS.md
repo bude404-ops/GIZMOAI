@@ -102,3 +102,15 @@ The poller treats these exactly like slash commands after admin authorization.
 ## Telegram live responder verification
 
 The Telegram responder workflow should normally be running or recently renewed. If Telegram appears silent, dispatch `GIZMO Telegram Live Responder` once and then check that the `Keep Telegram responder online` step is in progress or completed successfully.
+
+## 24-7 cloud brain storage
+
+`GIZMO Cloud Brain 24-7` restores `.gizmo_cloud_brain` from workflow cache, runs the multi-agent cloud brain cycle, saves the updated storage back to cache, and uploads audit artifacts. The live responder handles Telegram commands; the cloud brain workflow handles recurring learning and storage.
+
+Operator checks:
+
+```text
+status
+become smarter
+what did you learn?
+```

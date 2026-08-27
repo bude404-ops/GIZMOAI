@@ -135,3 +135,17 @@ Sensitive English phrases still hit the same gates. `turn on learning`, `deploy 
 Telegram command handling now uses a live long-poll responder instead of relying on a single scheduled check. The responder stays awake for a controlled window, renews on schedule, replies to authorized admin messages, and acknowledges processed updates.
 
 Expected behavior: simple English terms such as `status`, `begin learning`, and `what did you learn?` should be answered by the bot without Reaper manually dispatching a workflow.
+
+## Cloud brain swarm controls
+
+The Telegram bot can now start the stronger cloud brain loop with plain English:
+
+```text
+become smarter
+start working
+start cloud brain
+run the agents
+make yourself smarter
+```
+
+This enables the cloud brain state, runs the specialist swarm, records public non-secret knowledge into the Second Brain, rebuilds vault indexes, and persists a cloud snapshot for future runs.

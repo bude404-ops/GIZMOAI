@@ -7,6 +7,7 @@ from gizmo.agents.core_agents import CORE_AGENTS, core_agent_map
 from gizmo.agents.registry import AgentRegistry
 from gizmo.brain.models import BrainMemoryType
 from gizmo.control.autonomous_learning import TelegramAutonomousKnowledgeRunner
+from gizmo.control.cloud_brain import CloudAutonomousBrainRunner
 from gizmo.core.models import OperatingMode, Task, TaskStatus, now_iso
 from gizmo.github.api_adapter import GitHubApiAdapter
 from gizmo.telegram.config import TelegramConfig
@@ -23,6 +24,7 @@ class TelegramControlLayer:
         self.github = GitHubApiAdapter(orchestrator.store, orchestrator.security, orchestrator.audit)
         self.registry = AgentRegistry(orchestrator.store, getattr(orchestrator, "agent_brain", None))
         self.autonomous_learning = TelegramAutonomousKnowledgeRunner(orchestrator, self.notifier)
+        self.cloud_brain = CloudAutonomousBrainRunner(orchestrator, self.notifier)
 
     def handle_telegram_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         handlers = {
@@ -39,6 +41,7 @@ class TelegramControlLayer:
             "resume": self._resume,
             "autonomous": self._autonomous,
             "learn": self._learn,
+            "cloud_brain": self._cloud_brain,
             "memory": self._memory,
             "remember": self._remember,
             "logs": self._logs,
@@ -69,6 +72,7 @@ class TelegramControlLayer:
         tasks = self._list_tasks()
         current = next((task for task in tasks if task.get("status") in {"RUNNING", "PLANNING", "TESTING", "REVIEW"}), None)
         latest_cycle = self.autonomous_learning.latest_cycle() or {}
+        latest_cloud = self.cloud_brain.latest_cycle() or {}
         message = (
             "🧠 GIZMO STATUS\n"
             "System: 🟢 ONLINE\n"
@@ -78,7 +82,8 @@ class TelegramControlLayer:
             f"Tasks: {len(tasks)} tracked\n"
             f"Approvals: {status.get('policy', {}).get('pending_approvals', 0)} pending\n"
             f"Autonomous Mode: {'🟢 ENABLED' if self._autonomous_state().get('enabled') else '⚪ DISABLED'}\n"
-            f"Knowledge Cycle: {latest_cycle.get('status', 'not run')}"
+            f"Knowledge Cycle: {latest_cycle.get('status', 'not run')}\n"
+            f"Cloud Brain: {latest_cloud.get('status', 'not run')}"
         )
         return {"ok": True, "message": message, "task_status": "COMPLETED", "actions": [{"type": "status", "data": status}]}
 
@@ -148,6 +153,16 @@ class TelegramControlLayer:
         executed = self.orchestrator._execute_allowed_task(task)
         memory = self.orchestrator.brain_core.record_lesson("Telegram learning request", objective, source="telegram-control", source_agent="agent-26", project="Gizmo", tags=["telegram", "learning"])
         return {"ok": True, "message": f"🧠 LEARNING CYCLE RECORDED\nTask: {executed.id}\nMemory: {memory.id}", "task_status": "COMPLETED"}
+
+    def _cloud_brain(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        objective = (intent.objective or "run").lower().strip()
+        if any(word in objective for word in ["on", "enable", "start", "smarter", "work", "run", "agents", "cloud"]):
+            self.cloud_brain.enable(chat_id=envelope.chat_id, source="telegram")
+            cycle = self.cloud_brain.run_cycle(chat_id=envelope.chat_id)
+            return {"ok": cycle.status == "COMPLETED", "message": cycle.notification, "task_status": cycle.status, "priority": "IMPORTANT", "actions": [{"type": "cloud_brain_cycle", "data": cycle.to_dict()}]}
+        latest = self.cloud_brain.latest_cycle() or {}
+        state = self.cloud_brain.state()
+        return {"ok": True, "message": f"☁️ CLOUD BRAIN\nEnabled: {state.get('enabled', False)}\nLatest: {latest.get('status', 'not run')}\nAgents: {len(latest.get('agents', []))}", "task_status": "COMPLETED"}
 
     def _memory(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         query = intent.args.get("query") or intent.objective or "Gizmo"
