@@ -6,6 +6,10 @@ GIZMOAI remains one system with one brain. This upgrade extends the existing orc
 
 Creator request -> intent classification -> task decomposition -> capability discovery -> tool/agent selection -> execution plan -> verification -> result -> selective memory.
 
+Safe executable requests also pass through an execution ledger:
+
+route plan -> task IDs -> dependency chain -> approval state -> step status -> evidence -> refreshable execution record.
+
 ## Capability Registry
 
 The registry is dynamic and provider-neutral. Each capability declares:
@@ -99,3 +103,25 @@ The proof covers:
 - memory retrieval planning
 - unknown-problem research behavior
 - trading remaining one capability, not the core
+- execution ledger handoff from universal route to traceable task IDs
+
+## Execution Handoff
+
+Run a safe request as queued internal work:
+
+```bash
+python -m gizmo.core.cli universal-execute --text "Build a small verified automation script."
+```
+
+The result includes an `execution` record with:
+
+- execution_id
+- request_id
+- task_ids
+- step-to-task mapping
+- approval_required
+- permission_mode
+- acceptance_checks
+- verification evidence
+
+Approval-required requests create a ledger but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action.

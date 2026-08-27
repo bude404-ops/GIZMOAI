@@ -54,6 +54,7 @@ class TaskStep:
     objective: str
     verification: str
     status: str = "PLANNED"
+    task_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -74,6 +75,7 @@ class UniversalTaskPlan:
     verification_plan: list[str]
     memory_plan: list[str]
     project_record_id: str | None = None
+    execution_task_ids: list[str] = field(default_factory=list)
     status: str = "PLANNED"
     created_at: str = field(default_factory=now_iso)
 
@@ -100,8 +102,12 @@ class UniversalTaskRouter:
         permission_mode = self._permission_mode(classification, capabilities)
         verification = self._verification_plan(classification, capabilities)
         memory_plan = self._memory_plan(classification)
-        if execute:
-            self._create_tasks(project, objective, steps)
+        execution_task_ids: list[str] = []
+        if execute and not (classification.needs_approval or self._permission_mode(classification, capabilities) == "APPROVAL_REQUIRED"):
+            execution_task_ids = self._create_tasks(project, objective, steps)
+            for step, task_id in zip(steps, execution_task_ids):
+                step.status = "QUEUED"
+                step.task_id = task_id
         plan = UniversalTaskPlan(
             request_id=f"universal-{now_iso().replace(':', '').replace('.', '').replace('-', '')}",
             objective=objective,
@@ -116,6 +122,7 @@ class UniversalTaskRouter:
             verification_plan=verification,
             memory_plan=memory_plan,
             project_record_id=project_memory_id,
+            execution_task_ids=execution_task_ids,
             status="QUEUED" if execute else "PLANNED",
         )
         self.store.write(plan.to_dict(), "universal", "latest_plan.json")
@@ -246,10 +253,11 @@ class UniversalTaskRouter:
             metadata={"request_id": plan.request_id, "permission_mode": plan.permission_mode},
         )
 
-    def _create_tasks(self, project: str, objective: str, steps: list[TaskStep]) -> None:
+    def _create_tasks(self, project: str, objective: str, steps: list[TaskStep]) -> list[str]:
         ids: list[str] = []
         for step in steps:
             task = Task(project=project, objective=f"{step.name}: {step.objective}", assigned_agent=step.assigned_agent, priority=min(9, step.order), dependencies=ids[-1:])
             task.record("universal_router", f"Planned by universal router for objective: {objective}", capability=step.capability, verification=step.verification)
             self.orchestrator.tasks.create_task(task)
             ids.append(task.id)
+        return ids

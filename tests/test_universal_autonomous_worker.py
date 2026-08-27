@@ -15,6 +15,7 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["unreal_bridge_honest"] is True
     assert result["checks"]["generation_manifest"] is True
     assert result["checks"]["memory_retrieval_planned"] is True
+    assert result["checks"]["execution_ledger"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -74,5 +75,32 @@ def test_telegram_natural_language_routes_to_universal(tmp_path):
     )
     result = control.handle_telegram_task(envelope, intent)
     assert result["ok"] is True
-    assert result["task_status"] == "PLANNED"
+    assert result["task_status"] == "QUEUED"
     assert result["actions"][0]["data"]["plan"]["classification"]["category"] == "ai_generation"
+    assert result["actions"][0]["data"]["execution"]["task_ids"]
+
+
+def test_universal_execute_creates_traceable_execution_ledger(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution = result["execution"]
+    plan = result["plan"]
+    assert execution["status"] == "QUEUED"
+    assert execution["request_id"] == plan["request_id"]
+    assert execution["task_ids"] == plan["execution_task_ids"]
+    assert len(execution["steps"]) == len(plan["decomposition"])
+    assert all(step["task_id"] for step in execution["steps"])
+    first_task = orchestrator.tasks.load(execution["task_ids"][0])
+    assert first_task.execution_history[-1]["action"] == "created"
+    refreshed = orchestrator.universal_execution.refresh(execution["execution_id"]).to_dict()
+    assert refreshed["status"] == "QUEUED"
+
+
+def test_universal_execute_blocks_approval_required_without_tasks(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Deploy the production app now.", execute=True)
+    execution = result["execution"]
+    assert result["plan"]["approval_required"] is True
+    assert execution["status"] == "WAITING_APPROVAL"
+    assert execution["task_ids"] == []
+    assert all(step.get("blocked_reason") == "approval required" for step in execution["steps"])

@@ -282,21 +282,26 @@ class TelegramControlLayer:
 
     def _universal_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         objective = intent.objective or intent.args.get("raw_args") or "General Creator request"
-        result = self.orchestrator.universal_route(objective, project="Gizmo", execute=False)
+        result = self.orchestrator.universal_route(objective, project="Gizmo", execute=True)
         plan = result["plan"]
+        execution = result.get("execution") or {}
         cap_names = [cap["name"] for cap in plan["capabilities"][:4]]
         agents = plan["selected_agents"][:6]
+        task_count = len(execution.get("task_ids", []))
         message = (
-            "🧭 UNIVERSAL ROUTE READY\n"
+            "🧭 UNIVERSAL ROUTE QUEUED\n"
             f"Intent: {plan['classification']['category']}\n"
             f"Effort: {plan['classification']['effort']}\n"
             f"Capabilities: {', '.join(cap_names)}\n"
             f"Agents: {', '.join(agents)}\n"
             f"Approval: {'required' if plan['approval_required'] else plan['permission_mode']}\n"
             f"Steps: {len(plan['decomposition'])}\n"
+            f"Tasks: {task_count}\n"
+            f"Execution: {execution.get('execution_id', 'planned')}\n"
             f"Verify: {plan['verification_plan'][0]}"
         )
-        return {"ok": True, "message": message, "task_status": "PLANNED", "priority": "IMPORTANT", "actions": [{"type": "universal_route", "data": result}]}
+        status = "HUMAN_REVIEW" if plan["approval_required"] else (execution.get("status") or "QUEUED")
+        return {"ok": True, "message": message, "task_status": status, "priority": "IMPORTANT", "actions": [{"type": "universal_route", "data": result}]}
 
     def _test(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         task = self._create_gizmo_task(intent.objective or "Run tests", "agent-11")

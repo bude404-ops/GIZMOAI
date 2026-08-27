@@ -10,6 +10,7 @@ from gizmo.agent_factory.factory import AgentFactory
 from gizmo.brain.agent_memory import AgentBrainBridge
 from gizmo.brain.bootstrap import BrainBootstrapper
 from gizmo.brain.memory_api import SecondBrain
+from gizmo.capabilities.execution import UniversalExecutionLedger
 from gizmo.capabilities.registry import CapabilityRegistry
 from gizmo.capabilities.router import UniversalTaskRouter
 from gizmo.capabilities.workflows import WorkflowLibrary
@@ -65,6 +66,7 @@ class GizmoOrchestrator:
         self.capabilities = CapabilityRegistry(self.store)
         self.workflows = WorkflowLibrary(self.store)
         self.universal_router = UniversalTaskRouter(self)
+        self.universal_execution = UniversalExecutionLedger(self.store, self.tasks)
         self.internet_research = InternetResearchPipeline(self.brain_core, self.store)
         self.generation = GenerationProviderRegistry(self.store)
         self.unreal_integration = UnrealIntegrationLayer(self.store, self.unreal)
@@ -103,6 +105,7 @@ class GizmoOrchestrator:
             unreal_report = self.unreal_integration.inspect(objective=request).to_dict()
         if category == "ai_generation":
             generation_record = self.generation.record_request(self._infer_generation_modality(request), request, project=project).to_dict()
+        execution_record = self.universal_execution.create_from_plan(plan, project=project).to_dict() if execute else None
         result = {
             "ready": True,
             "plan": plan.to_dict(),
@@ -110,6 +113,7 @@ class GizmoOrchestrator:
             "research_report": research_report,
             "unreal_bridge": unreal_report,
             "generation_request": generation_record,
+            "execution": execution_record,
             "capability_status": self.capabilities.export_status(),
         }
         self.store.write(result, "universal", "route_latest_result.json")
@@ -137,6 +141,7 @@ class GizmoOrchestrator:
             "unreal_bridge_honest": routes["unreal"]["unreal_bridge"] is not None,
             "generation_manifest": routes["generation"]["generation_request"] is not None,
             "memory_retrieval_planned": bool(routes["memory"]["plan"]["context_memory_ids"] or routes["memory"]["plan"]["memory_plan"]),
+            "execution_ledger": bool(self.universal_route("Build a small verified automation script.", execute=True)["execution"]["task_ids"]),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
