@@ -130,3 +130,7 @@ Every full Super Brain cycle now includes a self-questioning pass. The thinker r
 ## Safe Mini App prototyper
 
 The prototyper reads chosen autonomous ideas and blueprint backlog entries, creates mobile-first HTML prototype drafts, writes manifests, queues them for review, and stores memory traces. Publishing remains approval-gated. This gives GIZMO creative hands without letting it silently release external artifacts.
+
+## Cloud memory vault
+
+The Second Brain writes Markdown memory notes continuously. The Cloud Memory Vault layer rebuilds those notes into an Obsidian-compatible vault, writes graph/backlink/index files, creates a manifest with hashes, packages a portable archive, prunes old archives, and persists the latest sync metadata in the cloud brain storage. This gives GIZMO durable self-owned memory across runs without depending on a single local working directory.

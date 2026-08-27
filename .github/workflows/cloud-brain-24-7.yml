@@ -101,3 +101,10 @@ jobs:
             .gizmo_cloud_brain/apps/latest_prototype_report.json
             .gizmo_cloud_brain/apps/prototype_review_queue.json
             .gizmo_cloud_brain/apps/prototypes/**
+            .gizmo_cloud_brain/cloud_vault/current/**
+            .gizmo_cloud_brain/cloud_vault/archives/**
+            .gizmo_cloud_brain/cloud_vault/manifests/**
+            .gizmo_cloud_brain/cloud_vault/latest_sync.json
+            .gizmo_cloud_brain/cloud_vault/latest_manifest.json
+            .gizmo_cloud_brain/cloud_vault/latest_archive.json
+            .gizmo_cloud_brain/cloud_vault/restore/RESTORE.md

@@ -36,6 +36,10 @@ def test_cloud_brain_cycle_executes_swarm_and_persists_snapshot(tmp_path: Path):
     assert cycle.prototypes["prototypes_created"]
     assert cycle.snapshot["prototypes_created"] >= 1
     assert cycle.snapshot["prototype_review_queue_size"] >= 1
+    assert cycle.cloud_vault["restore_ready"] is True
+    assert cycle.cloud_vault["markdown_notes"] >= 1
+    assert cycle.snapshot["cloud_vault_restore_ready"] is True
+    assert cycle.snapshot["cloud_vault_markdown_notes"] >= 1
     assert (tmp_path / "cloud" / "brain_snapshot.json").exists()
     assert (tmp_path / "second_brain" / "structured" / "semantic" / "index_report.json").exists()
     assert (tmp_path / "body" / "scorecard.json").exists()

@@ -11,6 +11,7 @@ from typing import Any
 
 from gizmo.apps.factory import KnowledgeAppFactory
 from gizmo.apps.prototyper import SafeMiniAppPrototyper
+from gizmo.brain.cloud_vault import CloudMemoryVault
 from gizmo.brain.models import BrainMemoryType
 from gizmo.brain.semantic_index import DurableSemanticMemoryIndex
 from gizmo.control.agent_body import AlwaysOnAgentBody
@@ -67,6 +68,7 @@ class CloudBrainCycle:
     universal_knowledge: dict[str, Any] = field(default_factory=dict)
     autonomous_thinking: dict[str, Any] = field(default_factory=dict)
     prototypes: dict[str, Any] = field(default_factory=dict)
+    cloud_vault: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -87,6 +89,7 @@ class CloudAutonomousBrainRunner:
         self.app_factory = KnowledgeAppFactory(self.brain, self.store)
         self.thinker = AutonomousThinker(self.brain, self.store)
         self.prototyper = SafeMiniAppPrototyper(self.brain, self.store)
+        self.cloud_vault = CloudMemoryVault(self.brain, self.store)
 
     def enable(self, *, chat_id: str = "", source: str = "cloud") -> dict[str, Any]:
         state = {
@@ -196,7 +199,9 @@ class CloudAutonomousBrainRunner:
             metadata={"cycle_id": cycle.cycle_id},
         )
         cycle.memories_created.append(evaluation.id)
-        cycle.vault_report = self.brain.rebuild_vault_indexes()
+        vault_sync = self.cloud_vault.sync()
+        cycle.cloud_vault = vault_sync.to_dict()
+        cycle.vault_report = vault_sync.vault_report
         cycle.semantic_index = self.semantic_index.rebuild(project="Gizmo").to_dict()
         cycle.body_scorecard = self.body.scorecard()
         cycle.ended_at = now_iso()
@@ -234,6 +239,10 @@ class CloudAutonomousBrainRunner:
             "chosen_next_actions": len(cycle.autonomous_thinking.get("chosen_next", [])),
             "prototypes_created": len(cycle.prototypes.get("prototypes_created", [])),
             "prototype_review_queue_size": cycle.prototypes.get("review_queue_size", 0),
+            "cloud_vault_files": len(cycle.cloud_vault.get("files", [])),
+            "cloud_vault_markdown_notes": cycle.cloud_vault.get("markdown_notes", 0),
+            "cloud_vault_archive_bytes": cycle.cloud_vault.get("archive_bytes", 0),
+            "cloud_vault_restore_ready": cycle.cloud_vault.get("restore_ready", False),
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }
@@ -279,5 +288,7 @@ class CloudAutonomousBrainRunner:
             f"Ideas generated: {len(cycle.autonomous_thinking.get('ideas', []))}\n"
             f"Upgrade proposals: {len(cycle.autonomous_thinking.get('upgrades', []))}\n"
             f"Prototype drafts: {len(cycle.prototypes.get('prototypes_created', []))}\n"
+            f"Cloud vault notes: {cycle.cloud_vault.get('markdown_notes', 0)}\n"
+            f"Cloud vault restore-ready: {cycle.cloud_vault.get('restore_ready', False)}\n"
             "Storage: persisted + snapshotted"
         )

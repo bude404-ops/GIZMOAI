@@ -5,6 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
+from gizmo.brain.cloud_vault import CloudMemoryVault
 from gizmo.orchestrator.orchestrator import GizmoOrchestrator
 from gizmo.security.security_system import SecuritySystem
 from gizmo.core.store import JsonStore
@@ -27,7 +28,7 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-learn", "app-factory-cycle", "autonomous-think", "prototype-cycle", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-learn", "app-factory-cycle", "autonomous-think", "prototype-cycle", "cloud-vault-sync", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     parser.add_argument("--user-id", default="1")
@@ -100,6 +101,9 @@ def main() -> None:
         emit(report.to_dict())
     elif args.command == "prototype-cycle":
         report = SafeMiniAppPrototyper(orchestrator.brain_core, orchestrator.store).run(limit=3, allow_publish=False)
+        emit(report.to_dict())
+    elif args.command == "cloud-vault-sync":
+        report = CloudMemoryVault(orchestrator.brain_core, orchestrator.store).sync()
         emit(report.to_dict())
     elif args.command == "telegram-poll-once":
         config = TelegramConfig.from_env()

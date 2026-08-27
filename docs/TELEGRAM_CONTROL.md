@@ -213,3 +213,15 @@ create prototypes
 ```
 
 The full Super Brain cycle now runs: universal learning → app factory → autonomous thinking → safe prototype generation → body execution → storage snapshot.
+
+## Obsidian-style cloud memory vault
+
+GIZMO now keeps a self-managed Markdown memory vault in cloud storage. Every Super Brain cycle rebuilds note indexes, graph files, backlinks, quality reports, a manifest, and a portable archive. The archive is restore-ready and can be opened in Obsidian-compatible tools after extraction.
+
+Use Telegram:
+
+```text
+sync memory vault
+cloud memory vault
+obsidian vault
+```

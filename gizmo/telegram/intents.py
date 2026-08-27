@@ -87,6 +87,9 @@ class IntentDetector:
             "prototype best idea": ("prototype", "prototype chosen ideas", {"raw_args": "chosen ideas"}, False, 0.98),
             "make prototypes": ("prototype", "prototype chosen ideas", {"raw_args": "chosen ideas"}, False, 0.98),
             "create prototypes": ("prototype", "prototype chosen ideas", {"raw_args": "chosen ideas"}, False, 0.98),
+            "sync memory vault": ("cloud_vault", "sync cloud memory vault", {"raw_args": "sync"}, False, 0.99),
+            "cloud memory vault": ("cloud_vault", "sync cloud memory vault", {"raw_args": "sync"}, False, 0.98),
+            "obsidian vault": ("cloud_vault", "sync obsidian memory vault", {"raw_args": "sync"}, False, 0.98),
             "think for yourself": ("autonomous_think", "self improvement, app ideas, upgrades", {"raw_args": "self improvement, app ideas, upgrades"}, False, 0.99),
             "generate your own ideas": ("autonomous_think", "self improvement, app ideas, upgrades", {"raw_args": "self improvement, app ideas, upgrades"}, False, 0.99),
             "find your own upgrades": ("autonomous_think", "self improvement, app ideas, upgrades", {"raw_args": "self improvement, app ideas, upgrades"}, False, 0.99),
@@ -125,6 +128,8 @@ class IntentDetector:
             return TelegramIntent("app_factory", "english", domain, args={"domain": domain}, confidence=0.93)
         if any(phrase in compact for phrase in ["prototype", "draft app", "draft mini app", "make prototypes", "create prototypes"]):
             return TelegramIntent("prototype", "english", raw, args={"raw_args": raw}, confidence=0.92)
+        if any(phrase in compact for phrase in ["memory vault", "cloud vault", "obsidian vault", "sync vault", "vault sync"]):
+            return TelegramIntent("cloud_vault", "english", raw, args={"raw_args": raw}, confidence=0.92)
         if any(phrase in compact for phrase in ["think for yourself", "own ideas", "your own ideas", "own upgrades", "decide what to build", "what should you build", "upgrade yourself"]):
             return TelegramIntent("autonomous_think", "english", raw, args={"raw_args": raw}, confidence=0.92)
         if any(phrase in compact for phrase in ["become smarter", "make yourself smarter", "start working", "run the agents", "multi agents", "multi-agent", "cloud brain", "super brain", "super ai", "24/7", "twenty four seven"]):
