@@ -98,3 +98,6 @@ jobs:
             .gizmo_cloud_brain/ideas/latest_thinking.json
             .gizmo_cloud_brain/ideas/upgrade_queue.json
             .gizmo_cloud_brain/ideas/chosen_next.json
+            .gizmo_cloud_brain/apps/latest_prototype_report.json
+            .gizmo_cloud_brain/apps/prototype_review_queue.json
+            .gizmo_cloud_brain/apps/prototypes/**

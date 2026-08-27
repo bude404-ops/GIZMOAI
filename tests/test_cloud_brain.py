@@ -33,6 +33,9 @@ def test_cloud_brain_cycle_executes_swarm_and_persists_snapshot(tmp_path: Path):
     assert cycle.autonomous_thinking["upgrades"]
     assert cycle.snapshot["autonomous_ideas_created"] >= 1
     assert cycle.snapshot["upgrade_proposals_created"] >= 1
+    assert cycle.prototypes["prototypes_created"]
+    assert cycle.snapshot["prototypes_created"] >= 1
+    assert cycle.snapshot["prototype_review_queue_size"] >= 1
     assert (tmp_path / "cloud" / "brain_snapshot.json").exists()
     assert (tmp_path / "second_brain" / "structured" / "semantic" / "index_report.json").exists()
     assert (tmp_path / "body" / "scorecard.json").exists()

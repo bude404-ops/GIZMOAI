@@ -6,6 +6,7 @@ from typing import Any
 from gizmo.agents.core_agents import CORE_AGENTS, core_agent_map
 from gizmo.agents.registry import AgentRegistry
 from gizmo.apps.factory import KnowledgeAppFactory
+from gizmo.apps.prototyper import SafeMiniAppPrototyper
 from gizmo.brain.models import BrainMemoryType
 from gizmo.control.autonomous_learning import TelegramAutonomousKnowledgeRunner
 from gizmo.control.cloud_brain import CloudAutonomousBrainRunner
@@ -31,6 +32,7 @@ class TelegramControlLayer:
         self.universal_ingestor = UniversalKnowledgeIngestor(orchestrator.brain_core, orchestrator.store)
         self.app_factory = KnowledgeAppFactory(orchestrator.brain_core, orchestrator.store)
         self.thinker = AutonomousThinker(orchestrator.brain_core, orchestrator.store)
+        self.prototyper = SafeMiniAppPrototyper(orchestrator.brain_core, orchestrator.store)
 
     def handle_telegram_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         handlers = {
@@ -51,6 +53,7 @@ class TelegramControlLayer:
             "universal_learn": self._universal_learn,
             "app_factory": self._app_factory,
             "autonomous_think": self._autonomous_think,
+            "prototype": self._prototype,
             "memory": self._memory,
             "remember": self._remember,
             "logs": self._logs,
@@ -84,6 +87,7 @@ class TelegramControlLayer:
         latest_cloud = self.cloud_brain.latest_cycle() or {}
         factory = self.app_factory.latest()
         thinking = self.thinker.latest()
+        prototypes = self.prototyper.latest()
         message = (
             "🧠 GIZMO STATUS\n"
             "System: 🟢 ONLINE\n"
@@ -97,7 +101,8 @@ class TelegramControlLayer:
             f"Cloud Brain: {latest_cloud.get('status', 'not run')}\n"
             f"Super Brain: reasoning {len(latest_cloud.get('reasoning', []))} / indexed {latest_cloud.get('semantic_index', {}).get('indexed_memories', 0)} / body actions {latest_cloud.get('body_scorecard', {}).get('actions', 0)}\n"
             f"Universal Knowledge: sources {latest_cloud.get('universal_knowledge', {}).get('sources_seen', 0)} / app backlog {factory.get('backlog_size', 0)}\n"
-            f"Autonomous Thinking: ideas {len(thinking.get('ideas', []))} / upgrades {len(thinking.get('upgrades', []))}"
+            f"Autonomous Thinking: ideas {len(thinking.get('ideas', []))} / upgrades {len(thinking.get('upgrades', []))}\n"
+            f"Prototype Queue: drafts {len(prototypes.get('prototypes_created', []))} / review {prototypes.get('review_queue_size', 0)}"
         )
         return {"ok": True, "message": message, "task_status": "COMPLETED", "actions": [{"type": "status", "data": status}]}
 
@@ -216,6 +221,17 @@ class TelegramControlLayer:
             "task_status": "COMPLETED",
             "priority": "IMPORTANT",
             "actions": [{"type": "autonomous_thinking", "data": report.to_dict()}],
+        }
+
+    def _prototype(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        report = self.prototyper.run(limit=3, allow_publish=False)
+        titles = [item.get("title", "Untitled") for item in report.top_prototypes[:3]]
+        return {
+            "ok": True,
+            "message": f"🛠️ PROTOTYPES READY FOR REVIEW\nDrafts: {len(report.prototypes_created)}\nReview queue: {report.review_queue_size}\nTop: " + ("; ".join(titles) if titles else "None yet") + "\nPublishing remains approval-gated.",
+            "task_status": "COMPLETED",
+            "priority": "IMPORTANT",
+            "actions": [{"type": "prototype", "data": report.to_dict()}],
         }
 
     def _memory(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:

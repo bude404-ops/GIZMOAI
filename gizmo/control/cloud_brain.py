@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from gizmo.apps.factory import KnowledgeAppFactory
+from gizmo.apps.prototyper import SafeMiniAppPrototyper
 from gizmo.brain.models import BrainMemoryType
 from gizmo.brain.semantic_index import DurableSemanticMemoryIndex
 from gizmo.control.agent_body import AlwaysOnAgentBody
@@ -32,6 +33,7 @@ SWARM_AGENTS = [
 CLOUD_TOPICS = [
     "autonomous idea generation",
     "self-upgrade proposal ranking",
+    "safe autonomous Mini App prototyping",
     "general public knowledge ingestion",
     "cross-domain source synthesis",
     "knowledge-to-app blueprint creation",
@@ -64,6 +66,7 @@ class CloudBrainCycle:
     app_factory: dict[str, Any] = field(default_factory=dict)
     universal_knowledge: dict[str, Any] = field(default_factory=dict)
     autonomous_thinking: dict[str, Any] = field(default_factory=dict)
+    prototypes: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -83,6 +86,7 @@ class CloudAutonomousBrainRunner:
         self.knowledge_ingestor = UniversalKnowledgeIngestor(self.brain, self.store)
         self.app_factory = KnowledgeAppFactory(self.brain, self.store)
         self.thinker = AutonomousThinker(self.brain, self.store)
+        self.prototyper = SafeMiniAppPrototyper(self.brain, self.store)
 
     def enable(self, *, chat_id: str = "", source: str = "cloud") -> dict[str, Any]:
         state = {
@@ -140,6 +144,8 @@ class CloudAutonomousBrainRunner:
         thinking = self.thinker.think(cycle_id=cycle.cycle_id, topics=cycle.topics, limit=8)
         cycle.autonomous_thinking = thinking.to_dict()
         cycle.memories_created.extend(thinking.memories_created)
+        prototype_report = self.prototyper.run(limit=3, allow_publish=False)
+        cycle.prototypes = prototype_report.to_dict()
 
         cycle.supervisor_plan = self.body.supervisor_plan(topics=cycle.topics)
         priority_topics = cycle.supervisor_plan.get("priority_topics") or cycle.topics
@@ -226,6 +232,8 @@ class CloudAutonomousBrainRunner:
             "autonomous_ideas_created": len(cycle.autonomous_thinking.get("ideas", [])),
             "upgrade_proposals_created": len(cycle.autonomous_thinking.get("upgrades", [])),
             "chosen_next_actions": len(cycle.autonomous_thinking.get("chosen_next", [])),
+            "prototypes_created": len(cycle.prototypes.get("prototypes_created", [])),
+            "prototype_review_queue_size": cycle.prototypes.get("review_queue_size", 0),
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }
@@ -270,5 +278,6 @@ class CloudAutonomousBrainRunner:
             f"App blueprints: {len(cycle.app_factory.get('blueprints_created', []))}\n"
             f"Ideas generated: {len(cycle.autonomous_thinking.get('ideas', []))}\n"
             f"Upgrade proposals: {len(cycle.autonomous_thinking.get('upgrades', []))}\n"
+            f"Prototype drafts: {len(cycle.prototypes.get('prototypes_created', []))}\n"
             "Storage: persisted + snapshotted"
         )

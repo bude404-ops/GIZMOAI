@@ -126,3 +126,7 @@ The general intelligence loop is: ingest public/domain knowledge, preserve it as
 ## Autonomous thinker
 
 Every full Super Brain cycle now includes a self-questioning pass. The thinker reads recent cloud state, app blueprints, body next-actions, scorecards, and semantic memories. It produces ranked ideas, upgrade proposals, and chosen next actions. Safe items enter the queue; risky items remain approval-gated.
+
+## Safe Mini App prototyper
+
+The prototyper reads chosen autonomous ideas and blueprint backlog entries, creates mobile-first HTML prototype drafts, writes manifests, queues them for review, and stores memory traces. Publishing remains approval-gated. This gives GIZMO creative hands without letting it silently release external artifacts.

@@ -198,3 +198,18 @@ decide what to build next
 ```
 
 The Super Brain cloud cycle runs this thinker automatically after universal knowledge ingestion and app blueprint generation.
+
+## Safe prototype controls
+
+GIZMO can now turn its chosen ideas and app blueprints into real Mini App prototype files. These drafts are stored for review and are not published automatically.
+
+Use Telegram:
+
+```text
+prototype your best idea
+prototype best idea
+make prototypes
+create prototypes
+```
+
+The full Super Brain cycle now runs: universal learning → app factory → autonomous thinking → safe prototype generation → body execution → storage snapshot.
