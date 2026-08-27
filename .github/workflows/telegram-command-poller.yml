@@ -2,8 +2,13 @@ name: GIZMO Telegram Live Responder
 
 on:
   workflow_dispatch:
+    inputs:
+      self_test:
+        description: Send a Telegram health ping before listening
+        required: false
+        default: 'false'
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
 
 concurrency:
   group: gizmo-telegram-live-responder
@@ -17,7 +22,7 @@ permissions:
 jobs:
   live-telegram-responder:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_ADMIN_ID: ${{ secrets.TELEGRAM_ADMIN_ID }}
@@ -31,12 +36,27 @@ jobs:
           python-version: '3.11'
       - name: Install GIZMO
         run: python -m pip install -e . pytest
+      - name: Optional Telegram health ping
+        if: ${{ inputs.self_test == 'true' && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_ADMIN_ID != '' }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          payload={"chat_id": os.environ['TELEGRAM_ADMIN_ID'], "text": "🟢 GIZMO Telegram responder health check: online and listening."}
+          req=urllib.request.Request(
+              f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
+              data=json.dumps(payload).encode(),
+              method='POST',
+              headers={'Content-Type':'application/json'},
+          )
+          with urllib.request.urlopen(req, timeout=20) as response:
+              print(json.dumps({'telegram_status': response.status}))
+          PY
       - name: Keep Telegram responder online
         run: |
           mkdir -p .gizmo_runtime/action-results
           python -m gizmo.core.cli telegram-poll-loop \
             --workspace .gizmo_runtime/telegram-live-responder \
-            --duration-seconds 1200 \
+            --duration-seconds 420 \
             --poll-timeout 25 \
             > .gizmo_runtime/action-results/telegram-live-responder.json
       - name: Verify safety
