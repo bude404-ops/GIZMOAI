@@ -104,3 +104,28 @@ def test_universal_execute_blocks_approval_required_without_tasks(tmp_path):
     assert execution["status"] == "WAITING_APPROVAL"
     assert execution["task_ids"] == []
     assert all(step.get("blocked_reason") == "approval required" for step in execution["steps"])
+
+
+def test_universal_runner_advances_ready_steps_in_dependency_order(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+
+    first_run = orchestrator.run_universal_execution(execution_id, max_steps=1)["execution"]
+    assert first_run["evidence"]["runner"]["ran"] == 1
+    assert first_run["steps"][0]["status"] == "COMPLETED"
+    assert first_run["steps"][1]["status"] == "QUEUED"
+
+    final_run = orchestrator.run_universal_execution(execution_id)["execution"]
+    assert final_run["status"] == "COMPLETED"
+    assert all(step["status"] == "COMPLETED" for step in final_run["steps"])
+    assert final_run["evidence"]["runner"]["ran"] >= 1
+
+
+def test_universal_runner_refuses_approval_required_execution(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Deploy the production app now.", execute=True)
+    run = orchestrator.run_universal_execution(result["execution"]["execution_id"])["execution"]
+    assert run["status"] == "WAITING_APPROVAL"
+    assert run["evidence"]["runner"]["ran"] == 0
+    assert run["evidence"]["runner"]["blocked"] == "approval required"

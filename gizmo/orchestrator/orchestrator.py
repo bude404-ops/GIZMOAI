@@ -120,6 +120,17 @@ class GizmoOrchestrator:
         self.audit.log("agent-01", None, "universal.route", "planned", category=category, approval_required=plan.approval_required)
         return result
 
+    def run_universal_execution(self, execution_id: str | None = None, *, max_steps: int | None = None) -> dict[str, Any]:
+        """Advance queued universal execution tasks through the safe bootstrap executor."""
+        record = self.universal_execution.latest() if execution_id is None else self.universal_execution.refresh(execution_id)
+        if record is None:
+            return {"ready": False, "status": "NO_EXECUTION", "message": "No universal execution record exists."}
+        refreshed = self.universal_execution.run_ready_steps(record.execution_id, executor=self._execute_allowed_task, max_steps=max_steps)
+        result = {"ready": True, "execution": refreshed.to_dict()}
+        self.store.write(result, "universal", "latest_run_result.json")
+        self.audit.log("agent-01", None, "universal.run", refreshed.status, execution_id=refreshed.execution_id, ran=refreshed.evidence.get("runner", {}).get("ran", 0))
+        return result
+
     def universal_acceptance_demo(self) -> dict[str, Any]:
         """Exercise the required general-purpose acceptance paths without unsafe side effects."""
         examples = {
@@ -142,12 +153,19 @@ class GizmoOrchestrator:
             "generation_manifest": routes["generation"]["generation_request"] is not None,
             "memory_retrieval_planned": bool(routes["memory"]["plan"]["context_memory_ids"] or routes["memory"]["plan"]["memory_plan"]),
             "execution_ledger": bool(self.universal_route("Build a small verified automation script.", execute=True)["execution"]["task_ids"]),
+            "execution_runner": self._acceptance_runner_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
         result = {"ready": all(checks.values()), "checks": checks, "routes": {k: v["plan"] for k, v in routes.items()}}
         self.store.write(result, "universal", "acceptance_demo.json")
         return result
+
+    def _acceptance_runner_check(self) -> bool:
+        route = self.universal_route("Build a tiny internal status summary.", execute=True)
+        run = self.run_universal_execution(route["execution"]["execution_id"])
+        execution = run["execution"]
+        return execution["status"] in {"QUEUED", "COMPLETED"} and execution["evidence"]["runner"]["ran"] >= 1
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:

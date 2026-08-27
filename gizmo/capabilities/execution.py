@@ -144,6 +144,41 @@ class UniversalExecutionLedger:
         self._persist(record)
         return record
 
+    def latest(self) -> UniversalExecutionRecord | None:
+        data = self.store.read("universal", "latest_execution.json")
+        return UniversalExecutionRecord(**data) if data else None
+
+    def run_ready_steps(self, execution_id: str, *, executor: Any, max_steps: int | None = None) -> UniversalExecutionRecord:
+        """Run dependency-ready internal tasks and refresh the execution ledger.
+
+        The runner only touches tasks already created by the universal router. Approval-gated
+        executions remain blocked, and dependency order is enforced from task records.
+        """
+        record = self.refresh(execution_id)
+        if record.approval_required or record.status == "WAITING_APPROVAL":
+            record.evidence["runner"] = {"ran": 0, "blocked": "approval required", "updated_at": now_iso()}
+            self._persist(record)
+            return record
+        ran = 0
+        skipped: list[dict[str, Any]] = []
+        for task_id in record.task_ids:
+            if max_steps is not None and ran >= max_steps:
+                break
+            task = self.tasks.load(task_id)
+            if task.status != TaskStatus.QUEUED:
+                skipped.append({"task_id": task_id, "reason": f"status={task.status.value}"})
+                continue
+            unmet = [dep for dep in task.dependencies if self.tasks.load(dep).status != TaskStatus.COMPLETED]
+            if unmet:
+                skipped.append({"task_id": task_id, "reason": "waiting_dependencies", "dependencies": unmet})
+                continue
+            executor(task)
+            ran += 1
+        refreshed = self.refresh(execution_id)
+        refreshed.evidence["runner"] = {"ran": ran, "skipped": skipped, "updated_at": now_iso()}
+        self._persist(refreshed)
+        return refreshed
+
     def _persist(self, record: UniversalExecutionRecord) -> None:
         data = record.to_dict()
         self.store.write(data, "universal", "executions", f"{record.execution_id}.json")

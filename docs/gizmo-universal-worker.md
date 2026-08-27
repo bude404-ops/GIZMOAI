@@ -8,7 +8,7 @@ Creator request -> intent classification -> task decomposition -> capability dis
 
 Safe executable requests also pass through an execution ledger:
 
-route plan -> task IDs -> dependency chain -> approval state -> step status -> evidence -> refreshable execution record.
+route plan -> task IDs -> dependency chain -> approval state -> step status -> safe runner -> evidence -> refreshable execution record.
 
 ## Capability Registry
 
@@ -104,6 +104,7 @@ The proof covers:
 - unknown-problem research behavior
 - trading remaining one capability, not the core
 - execution ledger handoff from universal route to traceable task IDs
+- dependency-aware execution runner advancing ready steps only
 
 ## Execution Handoff
 
@@ -111,6 +112,13 @@ Run a safe request as queued internal work:
 
 ```bash
 python -m gizmo.core.cli universal-execute --text "Build a small verified automation script."
+```
+
+Advance queued execution steps through the safe bootstrap executor:
+
+```bash
+python -m gizmo.core.cli universal-run --max-steps 1
+python -m gizmo.core.cli universal-run --execution-id <execution_id>
 ```
 
 The result includes an `execution` record with:
@@ -123,5 +131,6 @@ The result includes an `execution` record with:
 - permission_mode
 - acceptance_checks
 - verification evidence
+- runner evidence showing how many ready steps advanced and what remained blocked/skipped
 
 Approval-required requests create a ledger but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action.
