@@ -69,6 +69,7 @@ class CloudBrainCycle:
     autonomous_thinking: dict[str, Any] = field(default_factory=dict)
     prototypes: dict[str, Any] = field(default_factory=dict)
     cloud_vault: dict[str, Any] = field(default_factory=dict)
+    universal_worker: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -144,6 +145,11 @@ class CloudAutonomousBrainRunner:
         cycle.memories_created.extend(ingestion.memories_created)
         factory_report = self.app_factory.run(domain="general", limit=6)
         cycle.app_factory = factory_report.to_dict()
+        cycle.universal_worker = self.orchestrator.universal_route(
+            "Maintain the general-purpose autonomous worker architecture: capability registry, research pipeline, software project mode, debugging, repository operations, game-engine planning, AI generation routing, question answering, and trading as one non-central capability.",
+            project="Gizmo",
+            execute=False,
+        )
         thinking = self.thinker.think(cycle_id=cycle.cycle_id, topics=cycle.topics, limit=8)
         cycle.autonomous_thinking = thinking.to_dict()
         cycle.memories_created.extend(thinking.memories_created)
@@ -243,6 +249,8 @@ class CloudAutonomousBrainRunner:
             "cloud_vault_markdown_notes": cycle.cloud_vault.get("markdown_notes", 0),
             "cloud_vault_archive_bytes": cycle.cloud_vault.get("archive_bytes", 0),
             "cloud_vault_restore_ready": cycle.cloud_vault.get("restore_ready", False),
+            "universal_capabilities": cycle.universal_worker.get("capability_status", {}).get("total", 0),
+            "universal_latest_intent": cycle.universal_worker.get("plan", {}).get("classification", {}).get("category"),
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }
@@ -290,5 +298,6 @@ class CloudAutonomousBrainRunner:
             f"Prototype drafts: {len(cycle.prototypes.get('prototypes_created', []))}\n"
             f"Cloud vault notes: {cycle.cloud_vault.get('markdown_notes', 0)}\n"
             f"Cloud vault restore-ready: {cycle.cloud_vault.get('restore_ready', False)}\n"
+            f"Universal capabilities: {cycle.universal_worker.get('capability_status', {}).get('total', 0)}\n"
             "Storage: persisted + snapshotted"
         )

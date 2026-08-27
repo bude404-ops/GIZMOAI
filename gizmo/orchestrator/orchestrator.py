@@ -10,6 +10,9 @@ from gizmo.agent_factory.factory import AgentFactory
 from gizmo.brain.agent_memory import AgentBrainBridge
 from gizmo.brain.bootstrap import BrainBootstrapper
 from gizmo.brain.memory_api import SecondBrain
+from gizmo.capabilities.registry import CapabilityRegistry
+from gizmo.capabilities.router import UniversalTaskRouter
+from gizmo.capabilities.workflows import WorkflowLibrary
 from gizmo.communication.message_bus import MessageBus
 from gizmo.core.models import MemoryKind, OperatingMode, StructuredMessage, Task, TaskStatus
 from gizmo.core.store import JsonStore
@@ -19,6 +22,8 @@ from gizmo.memory.memory_system import MemorySystem
 from gizmo.monitoring.cost_manager import CostManager
 from gizmo.monitoring.logger import AuditLogger
 from gizmo.projects.project_generator import ProjectGenerator
+from gizmo.generation.provider_registry import GenerationProviderRegistry
+from gizmo.research.internet_research import InternetResearchPipeline
 from gizmo.security.approval_policy import ApprovalPolicyEngine
 from gizmo.security.security_system import SecuritySystem
 from gizmo.second_brain.command_router import SecondBrainCommandRouter
@@ -26,6 +31,7 @@ from gizmo.second_brain.context_indexer import RepoContextIndexer
 from gizmo.tasks.task_engine import TaskEngine
 from gizmo.tools.tool_registry import ToolRegistry
 from gizmo.unreal.unreal_detector import UnrealDetector
+from gizmo.unreal.integration_layer import UnrealIntegrationLayer
 
 
 class GizmoOrchestrator:
@@ -56,6 +62,12 @@ class GizmoOrchestrator:
         self.second_brain = SecondBrainCommandRouter(self.memory, self.tasks, self.context_indexer)
         self.brain_core = SecondBrain(self.workspace / "second_brain")
         self.agent_brain = AgentBrainBridge(self.brain_core, self.store)
+        self.capabilities = CapabilityRegistry(self.store)
+        self.workflows = WorkflowLibrary(self.store)
+        self.universal_router = UniversalTaskRouter(self)
+        self.internet_research = InternetResearchPipeline(self.brain_core, self.store)
+        self.generation = GenerationProviderRegistry(self.store)
+        self.unreal_integration = UnrealIntegrationLayer(self.store, self.unreal)
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -76,6 +88,74 @@ class GizmoOrchestrator:
             "node": bool(shutil.which("node")),
             "unreal": self.unreal.detect(),
         }
+
+    def universal_route(self, request: str, *, project: str = "Gizmo", execute: bool = False) -> dict[str, Any]:
+        """Route any Creator request through GIZMO's general-purpose capability system."""
+        plan = self.universal_router.route(request, project=project, execute=execute)
+        category = plan.classification["category"]
+        workflows = self.workflows.select(category)
+        research_report = None
+        unreal_report = None
+        generation_record = None
+        if plan.classification.get("needs_research"):
+            research_report = self.internet_research.run(request, project=project, store_useful=True).to_dict()
+        if category == "unreal_engine":
+            unreal_report = self.unreal_integration.inspect(objective=request).to_dict()
+        if category == "ai_generation":
+            generation_record = self.generation.record_request(self._infer_generation_modality(request), request, project=project).to_dict()
+        result = {
+            "ready": True,
+            "plan": plan.to_dict(),
+            "workflows": [workflow.to_dict() for workflow in workflows],
+            "research_report": research_report,
+            "unreal_bridge": unreal_report,
+            "generation_request": generation_record,
+            "capability_status": self.capabilities.export_status(),
+        }
+        self.store.write(result, "universal", "route_latest_result.json")
+        self.audit.log("agent-01", None, "universal.route", "planned", category=category, approval_required=plan.approval_required)
+        return result
+
+    def universal_acceptance_demo(self) -> dict[str, Any]:
+        """Exercise the required general-purpose acceptance paths without unsafe side effects."""
+        examples = {
+            "question": "What is the latest information about autonomous research agents?",
+            "research": "Research whether people would pay for a memory vault for AI projects.",
+            "software": "Build me a simple SaaS application that tracks project tasks.",
+            "debugging": "This application is broken; figure out why and fix it.",
+            "unreal": "Create a simple Unreal prototype with a player, environment and enemy.",
+            "generation": "Create a fantasy character for the Unreal project.",
+            "memory": "What were we working on yesterday?",
+            "unknown": "Figure out how to connect an unfamiliar game asset toolchain.",
+        }
+        routes = {name: self.universal_route(text, execute=False) for name, text in examples.items()}
+        checks = {
+            "question_researches": bool(routes["question"]["research_report"]),
+            "research_has_sources": bool(routes["research"]["research_report"]["sources_considered"]),
+            "software_project_mode": routes["software"]["plan"]["classification"]["effort"] == "project",
+            "debugging_verification": any("reproduce" in step["objective"].lower() or "root" in step["objective"].lower() for step in routes["debugging"]["plan"]["decomposition"]),
+            "unreal_bridge_honest": routes["unreal"]["unreal_bridge"] is not None,
+            "generation_manifest": routes["generation"]["generation_request"] is not None,
+            "memory_retrieval_planned": bool(routes["memory"]["plan"]["context_memory_ids"] or routes["memory"]["plan"]["memory_plan"]),
+            "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
+            "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
+        }
+        result = {"ready": all(checks.values()), "checks": checks, "routes": {k: v["plan"] for k, v in routes.items()}}
+        self.store.write(result, "universal", "acceptance_demo.json")
+        return result
+
+    @staticmethod
+    def _infer_generation_modality(request: str) -> str:
+        lowered = request.lower()
+        if "video" in lowered or "trailer" in lowered:
+            return "VIDEO"
+        if "audio" in lowered or "voice" in lowered or "sound" in lowered:
+            return "AUDIO"
+        if "3d" in lowered or "asset" in lowered or "model" in lowered:
+            return "3D"
+        if "code" in lowered:
+            return "CODE"
+        return "IMAGE"
 
     def plan_objective(self, project: str, objective: str) -> list[Task]:
         relevant_memory = self.memory.search(objective, limit=3)
@@ -378,5 +458,8 @@ class GizmoOrchestrator:
                 "profiles": len(list((self.workspace / "brain" / "agent_profiles").glob("*.json"))) if (self.workspace / "brain" / "agent_profiles").exists() else 0,
                 "collective_lessons": len(self.agent_brain.collective_memory().get("lessons", [])),
             },
-            "capabilities": self.store.read("config", "capabilities.json", default={}),
+            "capabilities": self.capabilities.export_status(),
+            "workflows": self.workflows.export_status(),
+            "generation": self.generation.export_status(),
+            "universal_router": self.store.read("universal", "latest_plan.json", default={}),
         }

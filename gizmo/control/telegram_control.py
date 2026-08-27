@@ -61,14 +61,15 @@ class TelegramControlLayer:
             "remember": self._remember,
             "logs": self._logs,
             "build": self._build,
+            "universal_task": self._universal_task,
             "test": self._test,
             "deploy": self._deploy,
             "approve": self._approve,
             "deny": self._deny,
             "restart": self._restart,
-            "natural_task": self._build,
+            "natural_task": self._universal_task,
         }
-        result = handlers.get(intent.intent, self._build)(envelope, intent)
+        result = handlers.get(intent.intent, self._universal_task)(envelope, intent)
         self.orchestrator.store.write({**envelope.to_dict(), "status": result.get("task_status", envelope.status), "result": result}, "telegram", "task_results", f"{envelope.task_id}.json")
         if result.get("notify", True):
             self.notifier.queue(envelope.chat_id, result.get("message", "Command accepted."), result.get("priority", "NORMAL"), result.get("inline_buttons", []))
@@ -278,6 +279,24 @@ class TelegramControlLayer:
         owner, repo = self._repo_parts()
         workflow = self.github.dispatch_workflow(owner, repo, "agent-runner.yml", {"task_id": task.id, "agent": agent_id, "objective": objective, "priority": intent.priority, "autonomous": "false", "project": task.project}, execute=False)
         return {"ok": True, "message": f"🧱 TASK QUEUED\nTask: {task.id}\nAgent: {agent_id}\nGitHub dispatch: {workflow.status}", "task_status": "QUEUED", "actions": [workflow.to_dict()]}
+
+    def _universal_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        objective = intent.objective or intent.args.get("raw_args") or "General Creator request"
+        result = self.orchestrator.universal_route(objective, project="Gizmo", execute=False)
+        plan = result["plan"]
+        cap_names = [cap["name"] for cap in plan["capabilities"][:4]]
+        agents = plan["selected_agents"][:6]
+        message = (
+            "🧭 UNIVERSAL ROUTE READY\n"
+            f"Intent: {plan['classification']['category']}\n"
+            f"Effort: {plan['classification']['effort']}\n"
+            f"Capabilities: {', '.join(cap_names)}\n"
+            f"Agents: {', '.join(agents)}\n"
+            f"Approval: {'required' if plan['approval_required'] else plan['permission_mode']}\n"
+            f"Steps: {len(plan['decomposition'])}\n"
+            f"Verify: {plan['verification_plan'][0]}"
+        )
+        return {"ok": True, "message": message, "task_status": "PLANNED", "priority": "IMPORTANT", "actions": [{"type": "universal_route", "data": result}]}
 
     def _test(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         task = self._create_gizmo_task(intent.objective or "Run tests", "agent-11")

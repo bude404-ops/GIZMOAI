@@ -13,6 +13,12 @@ DEFAULT_TOOLS = [
     ToolDefinition("memory.search", "Search persistent memory", ["read"], {"query": "string"}, {"matches": "array"}, ["*"], "LOW"),
     ToolDefinition("memory.add", "Write non-secret memory", ["memory_write"], {"content": "string"}, {"id": "string"}, ["*"], "LOW"),
     ToolDefinition("sandbox.run", "Run code in sandbox", ["execute"], {"command": "string"}, {"result": "string"}, ["agent-09", "agent-11", "agent-13"], "MEDIUM"),
+    ToolDefinition("web.search", "Search public internet sources", ["external_read", "research"], {"query": "string"}, {"results": "array"}, ["agent-02", "agent-20", "agent-21", "agent-22", "agent-23", "agent-27"], "LOW"),
+    ToolDefinition("web.read", "Read public source documents", ["external_read", "research"], {"url": "string"}, {"content": "string", "provenance": "object"}, ["agent-02", "agent-20", "agent-21", "agent-22", "agent-23", "agent-27"], "LOW"),
+    ToolDefinition("generation.request", "Create provider-neutral generation requests", ["external_write", "generation"], {"modality": "string", "prompt": "string"}, {"asset_manifest": "object"}, ["agent-13", "agent-14", "agent-15", "agent-16", "agent-17", "agent-18", "agent-19", "agent-27"], "HIGH"),
+    ToolDefinition("unreal.bridge", "Operate a controlled Unreal automation bridge when available", ["execute", "unreal"], {"project": "string", "script": "string"}, {"logs": "array", "artifacts": "array"}, ["agent-05", "agent-14", "agent-16", "agent-17", "agent-27"], "HIGH"),
+    ToolDefinition("print.get_asset", "Read Solana token data through Print World", ["external_read", "trading"], {"mint": "string"}, {"asset": "object"}, ["agent-02", "agent-20", "agent-21", "agent-27"], "LOW"),
+    ToolDefinition("print.trade", "Execute approval-gated Solana trades through Print World", ["trade_execute"], {"mint": "string", "side": "string", "amount": "number"}, {"transaction": "string"}, ["agent-21", "agent-27"], "CRITICAL"),
 ]
 
 

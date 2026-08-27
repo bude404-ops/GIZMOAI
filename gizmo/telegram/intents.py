@@ -120,9 +120,11 @@ class IntentDetector:
         if compact.startswith(("search memory for ", "find memory for ", "look up memory for ")):
             query = raw.split(" for ", 1)[1]
             return TelegramIntent("memory", "english", query, args={"query": query}, confidence=0.94)
-        if compact.startswith(("learn about ", "study ", "research ")):
+        if compact.startswith(("learn about ", "study ")):
             domain = compact.replace("learn about ", "", 1).replace("study ", "", 1).replace("research ", "", 1).strip() or "general"
             return TelegramIntent("universal_learn", "english", raw, args={"domain": domain, "raw_args": raw}, confidence=0.93)
+        if compact.startswith(("research ", "find out ", "figure out ", "can this make money", "would people pay")):
+            return TelegramIntent("universal_task", "english", raw, args={"raw_args": raw}, confidence=0.94)
         if compact.startswith(("create app ideas from ", "make app ideas from ", "build apps from ")):
             domain = raw.split(" from ", 1)[1] if " from " in raw.lower() else raw
             return TelegramIntent("app_factory", "english", domain, args={"domain": domain}, confidence=0.93)
@@ -134,8 +136,8 @@ class IntentDetector:
             return TelegramIntent("autonomous_think", "english", raw, args={"raw_args": raw}, confidence=0.92)
         if any(phrase in compact for phrase in ["become smarter", "make yourself smarter", "start working", "run the agents", "multi agents", "multi-agent", "cloud brain", "super brain", "super ai", "24/7", "twenty four seven"]):
             return TelegramIntent("cloud_brain", "english", raw, args={"raw_args": raw}, confidence=0.9)
-        if compact.startswith(("build ", "make ", "create ", "implement ")):
-            return TelegramIntent("build", "english", raw, priority="normal", confidence=0.9)
+        if compact.startswith(("build ", "make ", "create ", "implement ", "fix ", "debug ", "continue ")):
+            return TelegramIntent("universal_task", "english", raw, priority="normal", confidence=0.92)
         if compact.startswith(("deploy ", "ship ", "release ")):
             return TelegramIntent("deploy", "english", raw, requires_approval=True, confidence=0.9)
         return None
@@ -188,10 +190,10 @@ class IntentDetector:
             return TelegramIntent("logs", "natural", raw, args={"filter": "failures"}, confidence=0.78)
         if "deploy" in lowered:
             return TelegramIntent("deploy", "natural", raw, requires_approval=True, confidence=0.8)
-        if any(word in lowered for word in ["build", "create", "implement", "make"]):
-            return TelegramIntent("build", "natural", raw, priority="normal", confidence=0.82)
+        if any(word in lowered for word in ["research", "latest", "figure out", "would people pay", "make money", "unreal", "3d", "image", "video", "audio", "build", "create", "implement", "make", "fix", "debug", "continue"]):
+            return TelegramIntent("universal_task", "natural", raw, priority="normal", confidence=0.86)
         if "test" in lowered:
             return TelegramIntent("test", "natural", raw, confidence=0.75)
         if "next" in lowered and "work" in lowered:
             return TelegramIntent("learn", "natural", raw, confidence=0.72)
-        return TelegramIntent("natural_task", "natural", raw, confidence=0.55)
+        return TelegramIntent("universal_task", "natural", raw, confidence=0.6)

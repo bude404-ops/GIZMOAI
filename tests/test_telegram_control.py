@@ -38,12 +38,13 @@ def test_natural_language_build_becomes_structured_task_and_github_dispatch_plan
     orchestrator, router = make_router(tmp_path)
     result = router.route_text("101", "201", "Build a new autonomous research agent that learns from previous research.")
     assert result.ok is True
-    assert result.intent["intent"] == "build"
+    assert result.intent["intent"] == "universal_task"
     assert result.task["objective"].startswith("Build a new autonomous research agent")
-    assert result.actions[0]["action_type"] == "dispatch_workflow"
-    assert result.actions[0]["status"] == "PLANNED_NOT_EXECUTED"
-    gizmo_tasks = orchestrator.tasks.list_tasks()
-    assert any(task.assigned_agent == "agent-02" for task in gizmo_tasks)
+    assert result.actions[0]["type"] == "universal_route"
+    plan = result.actions[0]["data"]["plan"]
+    assert plan["classification"]["category"] in {"software_development", "web_research"}
+    assert "agent-02" in plan["selected_agents"]
+    assert plan["verification_plan"]
 
 
 def test_approval_buttons_are_bound_to_unique_action_id(tmp_path: Path):
@@ -90,9 +91,9 @@ def test_end_to_end_telegram_reaper_agent_github_memory_result(tmp_path: Path):
     result = router.route_text("101", "201", "Build me a new autonomous research agent that learns from previous research.")
     assert result.ok is True
     assert result.task["source"] == "telegram"
-    assert result.intent["intent"] == "build"
-    assert result.actions[0]["payload"]["inputs"]["agent"] == "agent-02"
-    tasks = [task for task in orchestrator.tasks.list_tasks() if "autonomous research agent" in task.objective]
-    assert tasks
+    assert result.intent["intent"] == "universal_task"
+    plan = result.actions[0]["data"]["plan"]
+    assert "web_research" in [cap["name"] for cap in plan["capabilities"]]
+    assert "Original request restated and matched to result" in plan["verification_plan"]
     assert orchestrator.store.path("telegram", "task_results", f"{result.task['task_id']}.json").exists()
     assert orchestrator.store.read("telegram", "notifications.json")
