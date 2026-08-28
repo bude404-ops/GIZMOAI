@@ -8,7 +8,7 @@ Creator request -> intent classification -> task decomposition -> capability dis
 
 Safe executable requests also pass through an execution ledger:
 
-route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> recovery/escalation -> evidence -> refreshable execution record.
+route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> recovery/escalation -> health report -> evidence -> refreshable execution record.
 
 ## Capability Registry
 
@@ -107,6 +107,7 @@ The proof covers:
 - dependency-aware execution runner advancing ready steps only
 - approval release from gated execution into queued task chain
 - failure recovery that requeues retryable failed steps and escalates exhausted tasks
+- health reporting across waiting approvals, failed steps, escalations, stale queues, and next actions
 
 ## Execution Handoff
 
@@ -128,6 +129,13 @@ Recover failed universal steps within their retry budget:
 ```bash
 python -m gizmo.core.cli universal-recover
 python -m gizmo.core.cli universal-recover --execution-id <execution_id> --max-steps 1
+```
+
+Inspect universal execution health:
+
+```bash
+python -m gizmo.core.cli universal-health
+python -m gizmo.core.cli universal-health --stale-after-minutes 15
 ```
 
 Release a gated universal execution after explicit approval:
@@ -154,3 +162,5 @@ The result includes an `execution` record with:
 Approval-required requests create a ledger and approval request but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action. Approval release creates the task chain; it does not run unless `--run-after-approval` is explicitly used.
 
 Failed steps are not hidden. `universal-recover` requeues failures while retry budget remains, clears stale results, records retry evidence, and marks exhausted tasks `ESCALATED` for operator review.
+
+`universal-health` is the triage view. It reports risk level, execution counts by status, step counts, waiting approvals, failed tasks, escalations, stale queued work, dependency blockers, and recommended next actions.

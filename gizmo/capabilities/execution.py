@@ -7,6 +7,7 @@ before a route can be called complete.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from gizmo.core.models import TaskStatus, now_iso
@@ -159,6 +160,97 @@ class UniversalExecutionLedger:
         data = self.store.read("universal", "latest_execution.json")
         return UniversalExecutionRecord(**data) if data else None
 
+    def list_records(self, *, refresh: bool = True) -> list[UniversalExecutionRecord]:
+        """Return known universal executions ordered newest first."""
+        folder = self.store.path("universal", "executions")
+        if not folder.exists():
+            return []
+        records: list[UniversalExecutionRecord] = []
+        for path in folder.glob("*.json"):
+            data = self.store.read("universal", "executions", path.name)
+            if not data:
+                continue
+            record = UniversalExecutionRecord(**data)
+            if refresh:
+                record = self.refresh(record.execution_id)
+            records.append(record)
+        return sorted(records, key=lambda record: record.updated_at, reverse=True)
+
+    def health_report(self, *, stale_after_minutes: int = 60) -> dict[str, Any]:
+        """Summarize universal execution health for operator triage."""
+        records = self.list_records(refresh=True)
+        counts = {status: 0 for status in ["PLANNED", "QUEUED", "RUNNING", "WAITING_APPROVAL", "FAILED", "ESCALATED", "COMPLETED"]}
+        step_counts = {"total": 0, "queued": 0, "running": 0, "waiting": 0, "failed": 0, "escalated": 0, "completed": 0, "blocked": 0}
+        waiting_approval: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        escalated: list[dict[str, Any]] = []
+        stale: list[dict[str, Any]] = []
+        dependency_blocked: list[dict[str, Any]] = []
+        now = datetime.now(timezone.utc)
+        for record in records:
+            counts[record.status] = counts.get(record.status, 0) + 1
+            age_minutes = self._age_minutes(record.updated_at, now)
+            if record.status == "WAITING_APPROVAL":
+                approval = record.evidence.get("approval_request", {})
+                waiting_approval.append({"execution_id": record.execution_id, "approval_id": approval.get("id"), "objective": record.objective, "age_minutes": age_minutes})
+            if record.status in {"QUEUED", "RUNNING"} and age_minutes >= stale_after_minutes:
+                stale.append({"execution_id": record.execution_id, "status": record.status, "objective": record.objective, "age_minutes": age_minutes})
+            for step in record.steps:
+                status = step.get("status", "PLANNED")
+                step_counts["total"] += 1
+                if status == TaskStatus.QUEUED.value:
+                    step_counts["queued"] += 1
+                elif status == TaskStatus.COMPLETED.value:
+                    step_counts["completed"] += 1
+                elif status == TaskStatus.FAILED.value:
+                    step_counts["failed"] += 1
+                    failed.append({"execution_id": record.execution_id, "task_id": step.get("task_id"), "step": step.get("name"), "objective": record.objective})
+                elif status == TaskStatus.ESCALATED.value:
+                    step_counts["escalated"] += 1
+                    escalated.append({"execution_id": record.execution_id, "task_id": step.get("task_id"), "step": step.get("name"), "objective": record.objective})
+                elif status in {TaskStatus.RUNNING.value, TaskStatus.TESTING.value, TaskStatus.REVIEW.value}:
+                    step_counts["running"] += 1
+                elif status == TaskStatus.WAITING.value:
+                    step_counts["waiting"] += 1
+                if step.get("blocked_reason"):
+                    step_counts["blocked"] += 1
+                task_id = step.get("task_id")
+                if task_id and status == TaskStatus.QUEUED.value:
+                    task = self.tasks.load(task_id)
+                    unmet = [dep for dep in task.dependencies if self.tasks.load(dep).status != TaskStatus.COMPLETED]
+                    if unmet:
+                        dependency_blocked.append({"execution_id": record.execution_id, "task_id": task_id, "step": step.get("name"), "dependencies": unmet})
+        actions: list[str] = []
+        if waiting_approval:
+            actions.append("Approve or reject waiting universal executions")
+        if failed:
+            actions.append("Run universal-recover on failed executions")
+        if escalated:
+            actions.append("Review escalated tasks manually before retrying")
+        if stale:
+            actions.append("Run universal-run or inspect stale queued executions")
+        if dependency_blocked and not failed and not escalated:
+            actions.append("Advance dependency-ready queued tasks")
+        if not actions:
+            actions.append("No intervention needed")
+        risk = "HIGH" if escalated or failed else ("MEDIUM" if waiting_approval or stale else "LOW")
+        report = {
+            "ready": True,
+            "risk": risk,
+            "total_executions": len(records),
+            "counts": counts,
+            "step_counts": step_counts,
+            "waiting_approval": waiting_approval,
+            "failed": failed,
+            "escalated": escalated,
+            "stale": stale,
+            "dependency_blocked": dependency_blocked,
+            "next_actions": actions,
+            "updated_at": now_iso(),
+        }
+        self.store.write(report, "universal", "health_report.json")
+        return report
+
     def run_ready_steps(self, execution_id: str, *, executor: Any, max_steps: int | None = None) -> UniversalExecutionRecord:
         """Run dependency-ready internal tasks and refresh the execution ledger.
 
@@ -269,3 +361,13 @@ class UniversalExecutionLedger:
         self.store.write(data, "universal", "executions", f"{record.execution_id}.json")
         self.store.write(data, "universal", "latest_execution.json")
         self.store.append_list(data, "universal", "execution_history.json")
+
+    @staticmethod
+    def _age_minutes(timestamp: str, now: datetime) -> int:
+        try:
+            parsed = datetime.fromisoformat(timestamp)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return max(0, int((now - parsed).total_seconds() // 60))
+        except Exception:
+            return 0

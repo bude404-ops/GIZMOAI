@@ -28,7 +28,7 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-route", "universal-execute", "universal-run", "universal-recover", "universal-approve", "universal-acceptance", "universal-learn", "app-factory-cycle", "autonomous-think", "prototype-cycle", "cloud-vault-sync", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-route", "universal-execute", "universal-run", "universal-recover", "universal-health", "universal-approve", "universal-acceptance", "universal-learn", "app-factory-cycle", "autonomous-think", "prototype-cycle", "cloud-vault-sync", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     parser.add_argument("--user-id", default="1")
@@ -44,6 +44,7 @@ def main() -> None:
     parser.add_argument("--approval-code", default=None)
     parser.add_argument("--run-after-approval", action="store_true")
     parser.add_argument("--max-steps", type=int, default=None)
+    parser.add_argument("--stale-after-minutes", type=int, default=60)
     args = parser.parse_args()
     orchestrator = GizmoOrchestrator(args.workspace)
     if args.command == "bootstrap":
@@ -99,6 +100,8 @@ def main() -> None:
         emit(orchestrator.run_universal_execution(args.execution_id, max_steps=args.max_steps))
     elif args.command == "universal-recover":
         emit(orchestrator.recover_universal_execution(args.execution_id, max_tasks=args.max_steps))
+    elif args.command == "universal-health":
+        emit(orchestrator.universal_health_report(stale_after_minutes=args.stale_after_minutes))
     elif args.command == "universal-approve":
         if not args.approval_id or not args.approval_code:
             emit({"ready": False, "status": "MISSING_APPROVAL", "message": "Provide --approval-id and --approval-code."})

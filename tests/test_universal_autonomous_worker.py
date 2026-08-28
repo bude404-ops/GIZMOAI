@@ -19,6 +19,7 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["execution_ledger"] is True
     assert result["checks"]["approval_release"] is True
     assert result["checks"]["failure_recovery"] is True
+    assert result["checks"]["health_report"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -189,3 +190,35 @@ def test_universal_recovery_escalates_exhausted_retry_budget(tmp_path):
     assert recovered["status"] == "ESCALATED"
     assert recovered["evidence"]["recovery"]["escalated"][0]["task_id"] == escalated.id
     assert escalated.status == TaskStatus.ESCALATED
+
+
+def test_universal_health_report_summarizes_clean_completed_chain(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    orchestrator.run_universal_execution(result["execution"]["execution_id"])
+
+    report = orchestrator.universal_health_report()
+    assert report["ready"] is True
+    assert report["risk"] == "LOW"
+    assert report["counts"]["COMPLETED"] >= 1
+    assert report["step_counts"]["completed"] >= len(result["execution"]["steps"])
+    assert report["next_actions"] == ["No intervention needed"]
+
+
+def test_universal_health_report_flags_failed_and_approval_work(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    failed_route = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    task = orchestrator.tasks.load(failed_route["execution"]["task_ids"][0])
+    task.status = TaskStatus.FAILED
+    task.result = "health simulated failure"
+    orchestrator.tasks.save(task)
+    waiting_route = orchestrator.universal_route("Deploy the production app now.", execute=True)
+
+    report = orchestrator.universal_health_report(stale_after_minutes=0)
+    assert report["risk"] == "HIGH"
+    assert report["counts"]["FAILED"] >= 1
+    assert report["counts"]["WAITING_APPROVAL"] >= 1
+    assert report["failed"][0]["task_id"] == task.id
+    assert report["waiting_approval"][0]["approval_id"] == waiting_route["execution"]["evidence"]["approval_request"]["id"]
+    assert "Run universal-recover on failed executions" in report["next_actions"]
+    assert "Approve or reject waiting universal executions" in report["next_actions"]

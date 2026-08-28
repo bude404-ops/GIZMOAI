@@ -148,6 +148,12 @@ class GizmoOrchestrator:
         self.audit.log("agent-01", None, "universal.recover", recovered.status, execution_id=recovered.execution_id, recovery=recovered.evidence.get("recovery", {}))
         return result
 
+    def universal_health_report(self, *, stale_after_minutes: int = 60) -> dict[str, Any]:
+        """Return a compact operator health report across universal executions."""
+        report = self.universal_execution.health_report(stale_after_minutes=stale_after_minutes)
+        self.audit.log("agent-01", None, "universal.health", report["risk"], executions=report["total_executions"], next_actions=report["next_actions"])
+        return report
+
     def approve_universal_execution(self, approval_id: str, approval_code: str, *, run: bool = False) -> dict[str, Any]:
         """Approve a waiting universal execution and release its planned steps into tasks."""
         record = self.universal_execution.find_by_approval(approval_id)
@@ -187,6 +193,7 @@ class GizmoOrchestrator:
             "execution_runner": self._acceptance_runner_check(),
             "approval_release": self._acceptance_approval_release_check(),
             "failure_recovery": self._acceptance_failure_recovery_check(),
+            "health_report": self._acceptance_health_report_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -218,6 +225,15 @@ class GizmoOrchestrator:
         recovered = self.recover_universal_execution(execution["execution_id"])["execution"]
         first = self.tasks.load(execution["task_ids"][0])
         return recovered["status"] == "QUEUED" and first.status == TaskStatus.QUEUED and first.retry_count == 1 and bool(recovered["evidence"]["recovery"]["requeued"])
+
+    def _acceptance_health_report_check(self) -> bool:
+        route = self.universal_route("Build a tiny health report smoke test.", execute=True)
+        task = self.tasks.load(route["execution"]["task_ids"][0])
+        task.status = TaskStatus.FAILED
+        task.result = "simulated health failure"
+        self.tasks.save(task)
+        report = self.universal_health_report(stale_after_minutes=0)
+        return report["ready"] is True and report["risk"] in {"HIGH", "MEDIUM"} and bool(report["failed"]) and "Run universal-recover on failed executions" in report["next_actions"]
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:
