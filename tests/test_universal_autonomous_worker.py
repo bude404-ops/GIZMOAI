@@ -20,6 +20,7 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["approval_release"] is True
     assert result["checks"]["failure_recovery"] is True
     assert result["checks"]["health_report"] is True
+    assert result["checks"]["cancellation"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -222,3 +223,45 @@ def test_universal_health_report_flags_failed_and_approval_work(tmp_path):
     assert report["waiting_approval"][0]["approval_id"] == waiting_route["execution"]["evidence"]["approval_request"]["id"]
     assert "Run universal-recover on failed executions" in report["next_actions"]
     assert "Approve or reject waiting universal executions" in report["next_actions"]
+
+
+def test_universal_cancel_stops_queued_chain_and_blocks_runner(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+
+    cancelled = orchestrator.cancel_universal_execution(execution_id, reason="operator changed priority")["execution"]
+    assert cancelled["status"] == "CANCELLED"
+    assert cancelled["evidence"]["cancellation"]["cancelled"] is True
+    assert cancelled["evidence"]["cancellation"]["reason"] == "operator changed priority"
+    assert all(orchestrator.tasks.load(task_id).status == TaskStatus.CANCELLED for task_id in result["execution"]["task_ids"])
+
+    run = orchestrator.run_universal_execution(execution_id)["execution"]
+    assert run["status"] == "CANCELLED"
+    assert run["evidence"]["runner"]["blocked"] == "execution cancelled"
+
+
+def test_universal_cancel_stops_waiting_approval_without_releasing_tasks(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Deploy the production app now.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+
+    cancelled = orchestrator.cancel_universal_execution(execution_id, reason="deployment window closed")["execution"]
+    assert cancelled["status"] == "CANCELLED"
+    assert cancelled["task_ids"] == []
+    assert all(step["status"] == TaskStatus.CANCELLED.value for step in cancelled["steps"])
+    refreshed = orchestrator.universal_execution.refresh(execution_id).to_dict()
+    assert refreshed["status"] == "CANCELLED"
+    assert refreshed["evidence"]["cancellation"]["reason"] == "deployment window closed"
+
+
+def test_universal_cancel_preserves_completed_execution(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+    orchestrator.run_universal_execution(execution_id)
+
+    cancelled = orchestrator.cancel_universal_execution(execution_id)["execution"]
+    assert cancelled["status"] == "COMPLETED"
+    assert cancelled["evidence"]["cancellation"]["cancelled"] is False
+    assert cancelled["evidence"]["cancellation"]["reason"] == "execution already completed"

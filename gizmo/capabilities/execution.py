@@ -136,7 +136,9 @@ class UniversalExecutionLedger:
             step["tests"] = task.tests
             step["result"] = task.result
             statuses.append(task.status.value)
-        if data.get("approval_required") and not task_ids:
+        if data.get("evidence", {}).get("cancellation", {}).get("cancelled") is True:
+            status = "CANCELLED"
+        elif data.get("approval_required") and not task_ids:
             status = "WAITING_APPROVAL"
         elif statuses and all(status == TaskStatus.COMPLETED.value for status in statuses):
             status = "COMPLETED"
@@ -144,6 +146,8 @@ class UniversalExecutionLedger:
             status = "FAILED"
         elif any(status == TaskStatus.ESCALATED.value for status in statuses):
             status = "ESCALATED"
+        elif statuses and all(status in {TaskStatus.COMPLETED.value, TaskStatus.CANCELLED.value} for status in statuses):
+            status = "CANCELLED" if any(status == TaskStatus.CANCELLED.value for status in statuses) else "COMPLETED"
         elif any(status in {TaskStatus.RUNNING.value, TaskStatus.TESTING.value, TaskStatus.REVIEW.value} for status in statuses):
             status = "RUNNING"
         elif task_ids:
@@ -179,8 +183,8 @@ class UniversalExecutionLedger:
     def health_report(self, *, stale_after_minutes: int = 60) -> dict[str, Any]:
         """Summarize universal execution health for operator triage."""
         records = self.list_records(refresh=True)
-        counts = {status: 0 for status in ["PLANNED", "QUEUED", "RUNNING", "WAITING_APPROVAL", "FAILED", "ESCALATED", "COMPLETED"]}
-        step_counts = {"total": 0, "queued": 0, "running": 0, "waiting": 0, "failed": 0, "escalated": 0, "completed": 0, "blocked": 0}
+        counts = {status: 0 for status in ["PLANNED", "QUEUED", "RUNNING", "WAITING_APPROVAL", "FAILED", "ESCALATED", "COMPLETED", "CANCELLED"]}
+        step_counts = {"total": 0, "queued": 0, "running": 0, "waiting": 0, "failed": 0, "escalated": 0, "completed": 0, "cancelled": 0, "blocked": 0}
         waiting_approval: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
         escalated: list[dict[str, Any]] = []
@@ -202,6 +206,8 @@ class UniversalExecutionLedger:
                     step_counts["queued"] += 1
                 elif status == TaskStatus.COMPLETED.value:
                     step_counts["completed"] += 1
+                elif status == TaskStatus.CANCELLED.value:
+                    step_counts["cancelled"] += 1
                 elif status == TaskStatus.FAILED.value:
                     step_counts["failed"] += 1
                     failed.append({"execution_id": record.execution_id, "task_id": step.get("task_id"), "step": step.get("name"), "objective": record.objective})
@@ -258,6 +264,10 @@ class UniversalExecutionLedger:
         executions remain blocked, and dependency order is enforced from task records.
         """
         record = self.refresh(execution_id)
+        if record.status == "CANCELLED":
+            record.evidence["runner"] = {"ran": 0, "blocked": "execution cancelled", "updated_at": now_iso()}
+            self._persist(record)
+            return record
         approved = record.evidence.get("approval_decision") == "APPROVED"
         if (record.approval_required and not approved) or record.status == "WAITING_APPROVAL":
             record.evidence["runner"] = {"ran": 0, "blocked": "approval required", "updated_at": now_iso()}
@@ -282,6 +292,42 @@ class UniversalExecutionLedger:
         refreshed.evidence["runner"] = {"ran": ran, "skipped": skipped, "updated_at": now_iso()}
         self._persist(refreshed)
         return refreshed
+
+    def cancel_execution(self, execution_id: str, *, reason: str = "operator cancelled") -> UniversalExecutionRecord:
+        """Cancel unfinished universal execution work and record the operator reason."""
+        record = self.refresh(execution_id)
+        if record.status == "COMPLETED":
+            record.evidence["cancellation"] = {"cancelled": False, "reason": "execution already completed", "updated_at": now_iso()}
+            self._persist(record)
+            return record
+        cancelled: list[dict[str, Any]] = []
+        preserved: list[dict[str, Any]] = []
+        terminal = {TaskStatus.COMPLETED, TaskStatus.ESCALATED, TaskStatus.CANCELLED}
+        for step in record.steps:
+            task_id = step.get("task_id")
+            if task_id:
+                task = self.tasks.load(task_id)
+                if task.status in terminal:
+                    preserved.append({"task_id": task_id, "status": task.status.value})
+                    step["status"] = task.status.value
+                    continue
+                previous_status = task.status.value
+                task.status = TaskStatus.CANCELLED
+                task.result = reason
+                task.record("cancel", "Universal execution cancelled", reason=reason, previous_status=previous_status)
+                self.tasks.save(task)
+                step["status"] = TaskStatus.CANCELLED.value
+                step["result"] = reason
+                cancelled.append({"task_id": task_id, "previous_status": previous_status})
+            elif step.get("status") != TaskStatus.COMPLETED.value:
+                previous_status = step.get("status", "PLANNED")
+                step["status"] = TaskStatus.CANCELLED.value
+                step["blocked_reason"] = reason
+                cancelled.append({"step": step.get("name"), "previous_status": previous_status})
+        record.status = "CANCELLED"
+        record.evidence["cancellation"] = {"cancelled": True, "reason": reason, "cancelled_items": cancelled, "preserved_terminal_items": preserved, "updated_at": now_iso()}
+        self._persist(record)
+        return record
 
     def recover_failed_steps(self, execution_id: str, *, max_tasks: int | None = None) -> UniversalExecutionRecord:
         """Requeue failed universal tasks when retry budget remains; escalate exhausted tasks."""

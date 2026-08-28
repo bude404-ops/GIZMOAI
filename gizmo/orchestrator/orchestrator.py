@@ -148,6 +148,17 @@ class GizmoOrchestrator:
         self.audit.log("agent-01", None, "universal.recover", recovered.status, execution_id=recovered.execution_id, recovery=recovered.evidence.get("recovery", {}))
         return result
 
+    def cancel_universal_execution(self, execution_id: str | None = None, *, reason: str = "operator cancelled") -> dict[str, Any]:
+        """Cancel unfinished universal execution work with evidence."""
+        record = self.universal_execution.latest() if execution_id is None else self.universal_execution.refresh(execution_id)
+        if record is None:
+            return {"ready": False, "status": "NO_EXECUTION", "message": "No universal execution record exists."}
+        cancelled = self.universal_execution.cancel_execution(record.execution_id, reason=reason)
+        result = {"ready": True, "execution": cancelled.to_dict()}
+        self.store.write(result, "universal", "latest_cancellation_result.json")
+        self.audit.log("agent-01", None, "universal.cancel", cancelled.status, execution_id=cancelled.execution_id, cancellation=cancelled.evidence.get("cancellation", {}))
+        return result
+
     def universal_health_report(self, *, stale_after_minutes: int = 60) -> dict[str, Any]:
         """Return a compact operator health report across universal executions."""
         report = self.universal_execution.health_report(stale_after_minutes=stale_after_minutes)
@@ -194,6 +205,7 @@ class GizmoOrchestrator:
             "approval_release": self._acceptance_approval_release_check(),
             "failure_recovery": self._acceptance_failure_recovery_check(),
             "health_report": self._acceptance_health_report_check(),
+            "cancellation": self._acceptance_cancellation_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -234,6 +246,12 @@ class GizmoOrchestrator:
         self.tasks.save(task)
         report = self.universal_health_report(stale_after_minutes=0)
         return report["ready"] is True and report["risk"] in {"HIGH", "MEDIUM"} and bool(report["failed"]) and "Run universal-recover on failed executions" in report["next_actions"]
+
+    def _acceptance_cancellation_check(self) -> bool:
+        route = self.universal_route("Build a tiny cancellation smoke test.", execute=True)
+        cancelled = self.cancel_universal_execution(route["execution"]["execution_id"], reason="acceptance cancellation smoke")["execution"]
+        run = self.run_universal_execution(route["execution"]["execution_id"])["execution"]
+        return cancelled["status"] == "CANCELLED" and cancelled["evidence"]["cancellation"]["cancelled"] is True and run["evidence"]["runner"]["blocked"] == "execution cancelled"
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:
