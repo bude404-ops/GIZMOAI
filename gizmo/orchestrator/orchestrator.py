@@ -21,6 +21,7 @@ from gizmo.github.api_adapter import GitHubApiAdapter
 from gizmo.github.workspace import GitHubWorkspaceLoop
 from gizmo.ideas.goal_loop import AutonomousGoalLoop
 from gizmo.ideas.failure_learning import FailureLearningLoop
+from gizmo.ideas.progress_evaluator import AutonomousProgressEvaluator
 from gizmo.memory.memory_system import MemorySystem
 from gizmo.monitoring.cost_manager import CostManager
 from gizmo.monitoring.logger import AuditLogger
@@ -74,6 +75,7 @@ class GizmoOrchestrator:
         self.unreal_integration = UnrealIntegrationLayer(self.store, self.unreal)
         self.goal_loop = AutonomousGoalLoop(self)
         self.failure_learning = FailureLearningLoop(self)
+        self.progress_evaluator = AutonomousProgressEvaluator(self)
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -94,6 +96,13 @@ class GizmoOrchestrator:
             "node": bool(shutil.which("node")),
             "unreal": self.unreal.detect(),
         }
+
+    def autonomous_progress_cycle(self, *, cycles: int = 5) -> dict[str, Any]:
+        """Evaluate whether autonomous activity is producing long-horizon progress."""
+        evaluation = self.progress_evaluator.evaluate(cycles=cycles)
+        result = {"ready": True, "progress": evaluation.to_dict()}
+        self.audit.log("agent-01", None, "autonomous.progress", evaluation.verdict, score=evaluation.score, trend=evaluation.trend)
+        return result
 
     def autonomous_failure_learning_cycle(self, *, min_occurrences: int = 1) -> dict[str, Any]:
         """Learn reusable recovery rules from failed universal execution evidence."""
@@ -282,6 +291,7 @@ class GizmoOrchestrator:
             "outcome_evaluator": self._acceptance_outcome_evaluator_check(),
             "autonomous_goal_selection": self._acceptance_autonomous_goal_selection_check(),
             "failure_learning": self._acceptance_failure_learning_check(),
+            "long_horizon_progress": self._acceptance_long_horizon_progress_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -375,6 +385,15 @@ class GizmoOrchestrator:
         self.tasks.save(task)
         report = self.autonomous_failure_learning_cycle()["learning"]
         return report["patterns_found"] >= 1 and report["lessons_created"] >= 1 and bool(report["recovery_rules"])
+
+
+    def _acceptance_long_horizon_progress_check(self) -> bool:
+        route = self.universal_route("Build a tiny progress evaluator smoke test.", execute=True)
+        self.run_universal_execution(route["execution"]["execution_id"])
+        self.evaluate_universal_outcome(route["execution"]["execution_id"])
+        self.autonomous_goal_cycle()
+        report = self.autonomous_progress_cycle()["progress"]
+        return report["verdict"] in {"ADVANCING", "MIXED_PROGRESS", "STALLED"} and report["score"] > 0 and bool(report["memory_id"])
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:

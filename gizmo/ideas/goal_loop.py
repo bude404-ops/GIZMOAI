@@ -88,12 +88,30 @@ class AutonomousGoalLoop:
             "thinking": self.store.read("ideas", "latest_thinking.json", default={}),
             "last_goal": self.store.read("goals", "latest_goal_decision.json", default={}),
             "failure_learning": self.store.read("learning", "latest_failure_learning.json", default={}),
+            "progress": self.store.read("progress", "latest_progress_evaluation.json", default={}),
         }
 
     def _build_candidates(self, context: dict[str, Any]) -> list[AutonomousGoalCandidate]:
         candidates: list[AutonomousGoalCandidate] = []
         health = context.get("health") or {}
         outcome = context.get("outcome") or {}
+        progress = context.get("progress") or {}
+        if progress and progress.get("verdict") in {"STALLED", "MIXED_PROGRESS"}:
+            gaps = progress.get("strategic_gaps") or progress.get("blockers") or []
+            focus = gaps[0] if gaps else "Improve long-horizon autonomous progress"
+            candidates.append(self._candidate(
+                objective=f"Improve autonomous progress: {focus}",
+                lane="strategic-progress",
+                source="progress-evaluator",
+                reason=f"Long-horizon verdict is {progress.get('verdict')} with score {progress.get('score')} and trend {progress.get('trend')}.",
+                urgency=0.78 if progress.get("verdict") == "STALLED" else 0.62,
+                value=0.92,
+                confidence=float(progress.get("confidence", 0.68)),
+                risk=0.14,
+                evidence=[str(item) for item in (gaps[:4] or progress.get("next_actions", [])[:4])],
+                recommended_command="autonomous-progress",
+            ))
+
         next_actions = health.get("next_actions") or []
         if health.get("risk") in {"HIGH", "MEDIUM"}:
             action = next_actions[0] if next_actions else "Inspect universal execution health and clear blockers"

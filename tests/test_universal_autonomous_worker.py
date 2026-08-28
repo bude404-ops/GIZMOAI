@@ -26,6 +26,7 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["outcome_evaluator"] is True
     assert result["checks"]["autonomous_goal_selection"] is True
     assert result["checks"]["failure_learning"] is True
+    assert result["checks"]["long_horizon_progress"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -573,3 +574,58 @@ o.tasks.save(t)
     assert data["ready"] is True
     assert data["learning"]["patterns_found"] >= 1
     assert data["learning"]["recovery_rules"]
+
+
+
+def test_autonomous_progress_evaluator_marks_mixed_or_advancing(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    orchestrator.run_universal_execution(result["execution"]["execution_id"])
+    orchestrator.evaluate_universal_outcome(result["execution"]["execution_id"])
+    orchestrator.autonomous_goal_cycle()
+    progress = orchestrator.autonomous_progress_cycle()["progress"]
+    assert progress["ready"] if "ready" in progress else True
+    assert progress["verdict"] in {"ADVANCING", "MIXED_PROGRESS", "STALLED"}
+    assert progress["score"] > 0
+    assert progress["confidence"] > 0.5
+    assert progress["memory_id"]
+    assert any(signal["name"] == "goal_quality" for signal in progress["signals"])
+
+
+def test_autonomous_progress_influences_goal_when_stalled(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    orchestrator.store.write({
+        "evaluation_id": "progress-test",
+        "verdict": "STALLED",
+        "score": 0.41,
+        "confidence": 0.72,
+        "trend": "DECLINING",
+        "strategic_gaps": ["Execution outcomes are not consistently closing as solved"],
+        "blockers": [],
+        "next_actions": ["Route the highest strategic gap into a universal execution plan"],
+    }, "progress", "latest_progress_evaluation.json")
+    decision = orchestrator.autonomous_goal_cycle()["decision"]
+    assert any(candidate["source"] == "progress-evaluator" for candidate in decision["candidates"])
+    progress_candidate = next(candidate for candidate in decision["candidates"] if candidate["source"] == "progress-evaluator")
+    assert "Improve autonomous progress" in progress_candidate["objective"]
+
+
+def test_autonomous_progress_cli(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    workspace = str(tmp_path / "cli-progress")
+    route = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "universal-execute", "--workspace", workspace, "--text", "Build a small verified automation script."],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    execution_id = json.loads(route.stdout)["execution"]["execution_id"]
+    subprocess.run([sys.executable, "-m", "gizmo.core.cli", "universal-run", "--workspace", workspace, "--execution-id", execution_id], check=True, text=True, capture_output=True)
+    subprocess.run([sys.executable, "-m", "gizmo.core.cli", "universal-evaluate", "--workspace", workspace, "--execution-id", execution_id], check=True, text=True, capture_output=True)
+    data = json.loads(subprocess.run([sys.executable, "-m", "gizmo.core.cli", "autonomous-progress", "--workspace", workspace, "--cycles", "3"], check=True, text=True, capture_output=True).stdout)
+    assert data["ready"] is True
+    assert data["progress"]["score"] > 0
+    assert data["progress"]["memory_id"]

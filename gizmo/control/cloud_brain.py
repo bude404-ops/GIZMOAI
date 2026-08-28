@@ -71,6 +71,7 @@ class CloudBrainCycle:
     cloud_vault: dict[str, Any] = field(default_factory=dict)
     universal_worker: dict[str, Any] = field(default_factory=dict)
     autonomous_goal: dict[str, Any] = field(default_factory=dict)
+    progress_evaluation: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -154,6 +155,9 @@ class CloudAutonomousBrainRunner:
         thinking = self.thinker.think(cycle_id=cycle.cycle_id, topics=cycle.topics, limit=8)
         cycle.autonomous_thinking = thinking.to_dict()
         cycle.autonomous_goal = self.orchestrator.autonomous_goal_cycle(route=True, execute=False)["decision"]
+        cycle.progress_evaluation = self.orchestrator.autonomous_progress_cycle()["progress"]
+        if cycle.progress_evaluation.get("memory_id"):
+            cycle.memories_created.append(cycle.progress_evaluation["memory_id"])
         cycle.memories_created.extend(thinking.memories_created)
         prototype_report = self.prototyper.run(limit=3, allow_publish=False)
         cycle.prototypes = prototype_report.to_dict()
@@ -253,6 +257,8 @@ class CloudAutonomousBrainRunner:
             "cloud_vault_restore_ready": cycle.cloud_vault.get("restore_ready", False),
             "universal_capabilities": cycle.universal_worker.get("capability_status", {}).get("total", 0),
             "universal_latest_intent": cycle.universal_worker.get("plan", {}).get("classification", {}).get("category"),
+            "progress_verdict": cycle.progress_evaluation.get("verdict"),
+            "progress_score": cycle.progress_evaluation.get("score"),
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }
