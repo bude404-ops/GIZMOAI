@@ -19,6 +19,7 @@ from gizmo.core.models import MemoryKind, OperatingMode, StructuredMessage, Task
 from gizmo.core.store import JsonStore
 from gizmo.github.api_adapter import GitHubApiAdapter
 from gizmo.github.workspace import GitHubWorkspaceLoop
+from gizmo.ideas.goal_loop import AutonomousGoalLoop
 from gizmo.memory.memory_system import MemorySystem
 from gizmo.monitoring.cost_manager import CostManager
 from gizmo.monitoring.logger import AuditLogger
@@ -70,6 +71,7 @@ class GizmoOrchestrator:
         self.internet_research = InternetResearchPipeline(self.brain_core, self.store)
         self.generation = GenerationProviderRegistry(self.store)
         self.unreal_integration = UnrealIntegrationLayer(self.store, self.unreal)
+        self.goal_loop = AutonomousGoalLoop(self)
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -90,6 +92,13 @@ class GizmoOrchestrator:
             "node": bool(shutil.which("node")),
             "unreal": self.unreal.detect(),
         }
+
+    def autonomous_goal_cycle(self, *, route: bool = False, execute: bool = False) -> dict[str, Any]:
+        """Select GIZMO's next goal from health, outcomes, queues, and memory signals."""
+        decision = self.goal_loop.select_next_goal(route=route, execute=execute)
+        result = {"ready": True, "decision": decision.to_dict()}
+        self.audit.log("agent-01", None, "autonomous.goal", decision.selected_goal.get("lane", "unknown"), goal=decision.selected_goal.get("objective"), score=decision.selected_goal.get("score"))
+        return result
 
     def universal_route(self, request: str, *, project: str = "Gizmo", execute: bool = False) -> dict[str, Any]:
         """Route any Creator request through GIZMO's general-purpose capability system."""
@@ -262,6 +271,7 @@ class GizmoOrchestrator:
             "pause_resume": self._acceptance_pause_resume_check(),
             "checkpoint_rollback": self._acceptance_checkpoint_rollback_check(),
             "outcome_evaluator": self._acceptance_outcome_evaluator_check(),
+            "autonomous_goal_selection": self._acceptance_autonomous_goal_selection_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -337,6 +347,14 @@ class GizmoOrchestrator:
         self.run_universal_execution(execution_id)
         after = self.evaluate_universal_outcome(execution_id)
         return before["verdict"] != "SOLVED" and after["verdict"] == "SOLVED" and after["confidence"] >= 0.85
+
+
+    def _acceptance_autonomous_goal_selection_check(self) -> bool:
+        route = self.universal_route("Build a tiny goal selection smoke test.", execute=True)
+        self.evaluate_universal_outcome(route["execution"]["execution_id"])
+        decision = self.autonomous_goal_cycle(route=True)["decision"]
+        selected = decision["selected_goal"]
+        return bool(selected["objective"]) and selected["score"] > 0 and decision["routed_plan"] is not None and bool(decision["memory_id"])
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:

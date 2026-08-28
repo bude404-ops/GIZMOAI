@@ -70,6 +70,7 @@ class CloudBrainCycle:
     prototypes: dict[str, Any] = field(default_factory=dict)
     cloud_vault: dict[str, Any] = field(default_factory=dict)
     universal_worker: dict[str, Any] = field(default_factory=dict)
+    autonomous_goal: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -152,6 +153,7 @@ class CloudAutonomousBrainRunner:
         )
         thinking = self.thinker.think(cycle_id=cycle.cycle_id, topics=cycle.topics, limit=8)
         cycle.autonomous_thinking = thinking.to_dict()
+        cycle.autonomous_goal = self.orchestrator.autonomous_goal_cycle(route=True, execute=False)["decision"]
         cycle.memories_created.extend(thinking.memories_created)
         prototype_report = self.prototyper.run(limit=3, allow_publish=False)
         cycle.prototypes = prototype_report.to_dict()

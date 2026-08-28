@@ -24,6 +24,7 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["pause_resume"] is True
     assert result["checks"]["checkpoint_rollback"] is True
     assert result["checks"]["outcome_evaluator"] is True
+    assert result["checks"]["autonomous_goal_selection"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -422,3 +423,79 @@ def test_universal_checkpoint_rollback_and_evaluate_cli(tmp_path):
         capture_output=True,
     )
     assert json.loads(rollback.stdout)["execution"]["evidence"]["rollback"]["rolled_back"] is True
+
+
+
+def test_autonomous_goal_selects_unsolved_outcome_and_routes_it(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+    evaluation = orchestrator.evaluate_universal_outcome(execution_id)
+    assert evaluation["verdict"] == "NOT_SOLVED"
+
+    decision = orchestrator.autonomous_goal_cycle(route=True)["decision"]
+    selected = decision["selected_goal"]
+    assert selected["source"] == "outcome-evaluator"
+    assert selected["lane"] == "outcome"
+    assert "Resolve unsolved execution outcome" in selected["objective"]
+    assert selected["score"] > 0.6
+    assert decision["memory_id"]
+    assert decision["routed_plan"]["ready"] is True
+
+
+def test_autonomous_goal_prioritizes_high_health_risk(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    task = orchestrator.tasks.load(result["execution"]["task_ids"][0])
+    task.status = TaskStatus.FAILED
+    task.result = "goal-loop simulated failure"
+    orchestrator.tasks.save(task)
+
+    decision = orchestrator.autonomous_goal_cycle()["decision"]
+    selected = decision["selected_goal"]
+    assert selected["source"] == "universal-health"
+    assert selected["lane"] == "stability"
+    assert "Stabilize GIZMO universal worker" in selected["objective"]
+    assert "Run universal-recover" in " ".join(selected["evidence"])
+
+
+def test_autonomous_goal_uses_body_next_queue_when_no_blockers(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    orchestrator.store.append_list({"created_at": "2026-01-01T00:00:00+00:00", "source_task": "task-1", "objective": "Gather more public evidence for autonomous goal loops", "priority": "MEDIUM"}, "body", "next_queue.json")
+
+    decision = orchestrator.autonomous_goal_cycle()["decision"]
+    selected = decision["selected_goal"]
+    assert selected["source"] == "agent-body"
+    assert selected["lane"] == "body-next-action"
+    assert selected["objective"] == "Gather more public evidence for autonomous goal loops"
+
+
+def test_autonomous_goal_cli_selects_and_routes(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    workspace = str(tmp_path / "cli-goal")
+    route = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "universal-execute", "--workspace", workspace, "--text", "Build a small verified automation script."],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    execution_id = json.loads(route.stdout)["execution"]["execution_id"]
+    subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "universal-evaluate", "--workspace", workspace, "--execution-id", execution_id],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    decision = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "autonomous-goal", "--workspace", workspace, "--route"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    data = json.loads(decision.stdout)
+    assert data["ready"] is True
+    assert data["decision"]["selected_goal"]["source"] == "outcome-evaluator"
+    assert data["decision"]["routed_plan"]["ready"] is True
