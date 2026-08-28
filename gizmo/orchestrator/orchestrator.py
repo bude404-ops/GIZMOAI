@@ -159,6 +159,28 @@ class GizmoOrchestrator:
         self.audit.log("agent-01", None, "universal.cancel", cancelled.status, execution_id=cancelled.execution_id, cancellation=cancelled.evidence.get("cancellation", {}))
         return result
 
+    def pause_universal_execution(self, execution_id: str | None = None, *, reason: str = "operator paused") -> dict[str, Any]:
+        """Pause unfinished universal execution work without making it terminal."""
+        record = self.universal_execution.latest() if execution_id is None else self.universal_execution.refresh(execution_id)
+        if record is None:
+            return {"ready": False, "status": "NO_EXECUTION", "message": "No universal execution record exists."}
+        paused = self.universal_execution.pause_execution(record.execution_id, reason=reason)
+        result = {"ready": True, "execution": paused.to_dict()}
+        self.store.write(result, "universal", "latest_pause_result.json")
+        self.audit.log("agent-01", None, "universal.pause", paused.status, execution_id=paused.execution_id, pause=paused.evidence.get("pause", {}))
+        return result
+
+    def resume_universal_execution(self, execution_id: str | None = None, *, reason: str = "operator resumed") -> dict[str, Any]:
+        """Resume paused universal execution work into queue or approval wait."""
+        record = self.universal_execution.latest() if execution_id is None else self.universal_execution.refresh(execution_id)
+        if record is None:
+            return {"ready": False, "status": "NO_EXECUTION", "message": "No universal execution record exists."}
+        resumed = self.universal_execution.resume_execution(record.execution_id, reason=reason)
+        result = {"ready": True, "execution": resumed.to_dict()}
+        self.store.write(result, "universal", "latest_resume_result.json")
+        self.audit.log("agent-01", None, "universal.resume", resumed.status, execution_id=resumed.execution_id, resume=resumed.evidence.get("resume", {}))
+        return result
+
     def universal_health_report(self, *, stale_after_minutes: int = 60) -> dict[str, Any]:
         """Return a compact operator health report across universal executions."""
         report = self.universal_execution.health_report(stale_after_minutes=stale_after_minutes)
@@ -206,6 +228,7 @@ class GizmoOrchestrator:
             "failure_recovery": self._acceptance_failure_recovery_check(),
             "health_report": self._acceptance_health_report_check(),
             "cancellation": self._acceptance_cancellation_check(),
+            "pause_resume": self._acceptance_pause_resume_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -252,6 +275,14 @@ class GizmoOrchestrator:
         cancelled = self.cancel_universal_execution(route["execution"]["execution_id"], reason="acceptance cancellation smoke")["execution"]
         run = self.run_universal_execution(route["execution"]["execution_id"])["execution"]
         return cancelled["status"] == "CANCELLED" and cancelled["evidence"]["cancellation"]["cancelled"] is True and run["evidence"]["runner"]["blocked"] == "execution cancelled"
+
+    def _acceptance_pause_resume_check(self) -> bool:
+        route = self.universal_route("Build a tiny pause smoke test.", execute=True)
+        execution_id = route["execution"]["execution_id"]
+        paused = self.pause_universal_execution(execution_id, reason="acceptance pause smoke")["execution"]
+        blocked = self.run_universal_execution(execution_id)["execution"]
+        resumed = self.resume_universal_execution(execution_id, reason="acceptance resume smoke")["execution"]
+        return paused["status"] == "PAUSED" and blocked["evidence"]["runner"]["blocked"] == "execution paused" and resumed["status"] == "QUEUED"
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:

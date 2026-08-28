@@ -21,6 +21,7 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["failure_recovery"] is True
     assert result["checks"]["health_report"] is True
     assert result["checks"]["cancellation"] is True
+    assert result["checks"]["pause_resume"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -265,3 +266,56 @@ def test_universal_cancel_preserves_completed_execution(tmp_path):
     assert cancelled["status"] == "COMPLETED"
     assert cancelled["evidence"]["cancellation"]["cancelled"] is False
     assert cancelled["evidence"]["cancellation"]["reason"] == "execution already completed"
+
+
+def test_universal_pause_blocks_runner_and_resume_requeues_chain(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+
+    paused = orchestrator.pause_universal_execution(execution_id, reason="wait for better window")["execution"]
+    assert paused["status"] == "PAUSED"
+    assert paused["evidence"]["pause"]["paused"] is True
+    assert all(orchestrator.tasks.load(task_id).status == TaskStatus.PAUSED for task_id in result["execution"]["task_ids"])
+
+    blocked = orchestrator.run_universal_execution(execution_id)["execution"]
+    assert blocked["status"] == "PAUSED"
+    assert blocked["evidence"]["runner"]["blocked"] == "execution paused"
+
+    resumed = orchestrator.resume_universal_execution(execution_id, reason="window reopened")["execution"]
+    assert resumed["status"] == "QUEUED"
+    assert resumed["evidence"]["pause"]["paused"] is False
+    assert resumed["evidence"]["resume"]["resumed"] is True
+    assert all(orchestrator.tasks.load(task_id).status == TaskStatus.QUEUED for task_id in result["execution"]["task_ids"])
+
+
+def test_universal_pause_resume_waiting_approval_without_releasing_tasks(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Deploy the production app now.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+
+    paused = orchestrator.pause_universal_execution(execution_id, reason="approval window paused")["execution"]
+    assert paused["status"] == "PAUSED"
+    assert paused["task_ids"] == []
+    assert all(step["status"] == TaskStatus.PAUSED.value for step in paused["steps"])
+    health = orchestrator.universal_health_report(stale_after_minutes=0)
+    assert health["counts"]["PAUSED"] >= 1
+    assert health["step_counts"]["paused"] >= len(paused["steps"])
+    assert "Resume or cancel paused universal executions" in health["next_actions"]
+
+    resumed = orchestrator.resume_universal_execution(execution_id, reason="approval window reopened")["execution"]
+    assert resumed["status"] == "WAITING_APPROVAL"
+    assert resumed["task_ids"] == []
+    assert all(step["blocked_reason"] == "approval required" for step in resumed["steps"])
+
+
+def test_universal_pause_preserves_completed_execution(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+    orchestrator.run_universal_execution(execution_id)
+
+    paused = orchestrator.pause_universal_execution(execution_id)["execution"]
+    assert paused["status"] == "COMPLETED"
+    assert paused["evidence"]["pause"]["paused"] is False
+    assert paused["evidence"]["pause"]["reason"] == "execution already completed"

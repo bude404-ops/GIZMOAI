@@ -14,6 +14,7 @@ def now_iso() -> str:
 
 class TaskStatus(str, Enum):
     QUEUED = "QUEUED"
+    PAUSED = "PAUSED"
     PLANNING = "PLANNING"
     RUNNING = "RUNNING"
     WAITING = "WAITING"

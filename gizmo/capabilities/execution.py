@@ -136,8 +136,11 @@ class UniversalExecutionLedger:
             step["tests"] = task.tests
             step["result"] = task.result
             statuses.append(task.status.value)
+        pause = data.get("evidence", {}).get("pause", {})
         if data.get("evidence", {}).get("cancellation", {}).get("cancelled") is True:
             status = "CANCELLED"
+        elif pause.get("paused") is True:
+            status = "PAUSED"
         elif data.get("approval_required") and not task_ids:
             status = "WAITING_APPROVAL"
         elif statuses and all(status == TaskStatus.COMPLETED.value for status in statuses):
@@ -183,9 +186,10 @@ class UniversalExecutionLedger:
     def health_report(self, *, stale_after_minutes: int = 60) -> dict[str, Any]:
         """Summarize universal execution health for operator triage."""
         records = self.list_records(refresh=True)
-        counts = {status: 0 for status in ["PLANNED", "QUEUED", "RUNNING", "WAITING_APPROVAL", "FAILED", "ESCALATED", "COMPLETED", "CANCELLED"]}
-        step_counts = {"total": 0, "queued": 0, "running": 0, "waiting": 0, "failed": 0, "escalated": 0, "completed": 0, "cancelled": 0, "blocked": 0}
+        counts = {status: 0 for status in ["PLANNED", "QUEUED", "PAUSED", "RUNNING", "WAITING_APPROVAL", "FAILED", "ESCALATED", "COMPLETED", "CANCELLED"]}
+        step_counts = {"total": 0, "queued": 0, "paused": 0, "running": 0, "waiting": 0, "failed": 0, "escalated": 0, "completed": 0, "cancelled": 0, "blocked": 0}
         waiting_approval: list[dict[str, Any]] = []
+        paused: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
         escalated: list[dict[str, Any]] = []
         stale: list[dict[str, Any]] = []
@@ -197,6 +201,9 @@ class UniversalExecutionLedger:
             if record.status == "WAITING_APPROVAL":
                 approval = record.evidence.get("approval_request", {})
                 waiting_approval.append({"execution_id": record.execution_id, "approval_id": approval.get("id"), "objective": record.objective, "age_minutes": age_minutes})
+            if record.status == "PAUSED":
+                pause = record.evidence.get("pause", {})
+                paused.append({"execution_id": record.execution_id, "objective": record.objective, "reason": pause.get("reason"), "age_minutes": age_minutes})
             if record.status in {"QUEUED", "RUNNING"} and age_minutes >= stale_after_minutes:
                 stale.append({"execution_id": record.execution_id, "status": record.status, "objective": record.objective, "age_minutes": age_minutes})
             for step in record.steps:
@@ -204,6 +211,8 @@ class UniversalExecutionLedger:
                 step_counts["total"] += 1
                 if status == TaskStatus.QUEUED.value:
                     step_counts["queued"] += 1
+                elif status == TaskStatus.PAUSED.value:
+                    step_counts["paused"] += 1
                 elif status == TaskStatus.COMPLETED.value:
                     step_counts["completed"] += 1
                 elif status == TaskStatus.CANCELLED.value:
@@ -229,6 +238,8 @@ class UniversalExecutionLedger:
         actions: list[str] = []
         if waiting_approval:
             actions.append("Approve or reject waiting universal executions")
+        if paused:
+            actions.append("Resume or cancel paused universal executions")
         if failed:
             actions.append("Run universal-recover on failed executions")
         if escalated:
@@ -239,7 +250,7 @@ class UniversalExecutionLedger:
             actions.append("Advance dependency-ready queued tasks")
         if not actions:
             actions.append("No intervention needed")
-        risk = "HIGH" if escalated or failed else ("MEDIUM" if waiting_approval or stale else "LOW")
+        risk = "HIGH" if escalated or failed else ("MEDIUM" if waiting_approval or stale or paused else "LOW")
         report = {
             "ready": True,
             "risk": risk,
@@ -247,6 +258,7 @@ class UniversalExecutionLedger:
             "counts": counts,
             "step_counts": step_counts,
             "waiting_approval": waiting_approval,
+            "paused": paused,
             "failed": failed,
             "escalated": escalated,
             "stale": stale,
@@ -266,6 +278,10 @@ class UniversalExecutionLedger:
         record = self.refresh(execution_id)
         if record.status == "CANCELLED":
             record.evidence["runner"] = {"ran": 0, "blocked": "execution cancelled", "updated_at": now_iso()}
+            self._persist(record)
+            return record
+        if record.status == "PAUSED" or record.evidence.get("pause", {}).get("paused") is True:
+            record.evidence["runner"] = {"ran": 0, "blocked": "execution paused", "updated_at": now_iso()}
             self._persist(record)
             return record
         approved = record.evidence.get("approval_decision") == "APPROVED"
@@ -328,6 +344,76 @@ class UniversalExecutionLedger:
         record.evidence["cancellation"] = {"cancelled": True, "reason": reason, "cancelled_items": cancelled, "preserved_terminal_items": preserved, "updated_at": now_iso()}
         self._persist(record)
         return record
+
+    def pause_execution(self, execution_id: str, *, reason: str = "operator paused") -> UniversalExecutionRecord:
+        """Pause unfinished universal execution work without making it terminal."""
+        record = self.refresh(execution_id)
+        if record.status in {"COMPLETED", "CANCELLED", "ESCALATED"}:
+            record.evidence["pause"] = {"paused": False, "reason": f"execution already {record.status.lower()}", "updated_at": now_iso()}
+            self._persist(record)
+            return record
+        paused: list[dict[str, Any]] = []
+        preserved: list[dict[str, Any]] = []
+        prior_step_statuses: dict[str, str] = {}
+        terminal = {TaskStatus.COMPLETED, TaskStatus.ESCALATED, TaskStatus.CANCELLED}
+        for step in record.steps:
+            task_id = step.get("task_id")
+            if task_id:
+                task = self.tasks.load(task_id)
+                if task.status in terminal:
+                    preserved.append({"task_id": task_id, "status": task.status.value})
+                    continue
+                previous_status = task.status.value
+                task.status = TaskStatus.PAUSED
+                task.record("pause", "Universal execution paused", reason=reason, previous_status=previous_status)
+                self.tasks.save(task)
+                step["status"] = TaskStatus.PAUSED.value
+                paused.append({"task_id": task_id, "previous_status": previous_status})
+            elif step.get("status") != TaskStatus.COMPLETED.value:
+                previous_status = step.get("status", "PLANNED")
+                prior_step_statuses[step.get("name", f"step-{step.get('order')}")] = previous_status
+                step["status"] = TaskStatus.PAUSED.value
+                step["blocked_reason"] = reason
+                paused.append({"step": step.get("name"), "previous_status": previous_status})
+        record.status = "PAUSED"
+        record.evidence["pause"] = {"paused": True, "reason": reason, "paused_items": paused, "preserved_terminal_items": preserved, "prior_step_statuses": prior_step_statuses, "updated_at": now_iso()}
+        self._persist(record)
+        return record
+
+    def resume_execution(self, execution_id: str, *, reason: str = "operator resumed") -> UniversalExecutionRecord:
+        """Resume paused universal execution work back to queue/waiting approval."""
+        record = self.refresh(execution_id)
+        if record.evidence.get("pause", {}).get("paused") is not True:
+            record.evidence["resume"] = {"resumed": False, "reason": "execution is not paused", "updated_at": now_iso()}
+            self._persist(record)
+            return record
+        resumed: list[dict[str, Any]] = []
+        prior_step_statuses = record.evidence.get("pause", {}).get("prior_step_statuses", {})
+        for step in record.steps:
+            task_id = step.get("task_id")
+            if task_id:
+                task = self.tasks.load(task_id)
+                if task.status == TaskStatus.PAUSED:
+                    task.status = TaskStatus.QUEUED
+                    task.record("resume", "Universal execution resumed", reason=reason, next_status=TaskStatus.QUEUED.value)
+                    self.tasks.save(task)
+                    step["status"] = TaskStatus.QUEUED.value
+                    resumed.append({"task_id": task_id, "status": TaskStatus.QUEUED.value})
+            elif step.get("status") == TaskStatus.PAUSED.value:
+                restored = prior_step_statuses.get(step.get("name"), "PLANNED")
+                step["status"] = restored
+                step["blocked_reason"] = "approval required" if record.approval_required and not record.task_ids else None
+                resumed.append({"step": step.get("name"), "status": restored})
+        record.evidence["pause"]["paused"] = False
+        record.evidence["resume"] = {"resumed": True, "reason": reason, "resumed_items": resumed, "updated_at": now_iso()}
+        if record.approval_required and not record.task_ids:
+            record.status = "WAITING_APPROVAL"
+        elif record.task_ids:
+            record.status = "QUEUED"
+        else:
+            record.status = "PLANNED"
+        self._persist(record)
+        return self.refresh(record.execution_id)
 
     def recover_failed_steps(self, execution_id: str, *, max_tasks: int | None = None) -> UniversalExecutionRecord:
         """Requeue failed universal tasks when retry budget remains; escalate exhausted tasks."""

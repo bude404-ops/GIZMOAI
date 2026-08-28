@@ -8,7 +8,7 @@ Creator request -> intent classification -> task decomposition -> capability dis
 
 Safe executable requests also pass through an execution ledger:
 
-route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> recovery/escalation/cancellation -> health report -> evidence -> refreshable execution record.
+route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> pause/resume -> recovery/escalation/cancellation -> health report -> evidence -> refreshable execution record.
 
 ## Capability Registry
 
@@ -109,6 +109,7 @@ The proof covers:
 - failure recovery that requeues retryable failed steps and escalates exhausted tasks
 - health reporting across waiting approvals, failed steps, escalations, stale queues, and next actions
 - cancellation that stops queued or approval-waiting execution records without releasing hidden work
+- pause/resume that holds unfinished work reversibly and blocks runner progress until resumed
 
 ## Execution Handoff
 
@@ -139,6 +140,13 @@ python -m gizmo.core.cli universal-cancel --execution-id <execution_id> --reason
 python -m gizmo.core.cli universal-cancel --reason "cancel latest execution"
 ```
 
+Pause or resume unfinished universal execution work:
+
+```bash
+python -m gizmo.core.cli universal-pause --execution-id <execution_id> --reason "hold until review"
+python -m gizmo.core.cli universal-resume --execution-id <execution_id> --reason "review complete"
+```
+
 Inspect universal execution health:
 
 ```bash
@@ -167,11 +175,14 @@ The result includes an `execution` record with:
 - approval request and release evidence for gated executions
 - recovery evidence showing requeued and escalated task IDs
 - cancellation evidence showing cancelled items, preserved terminal items, and operator reason
+- pause/resume evidence showing held items, resumed items, and runner blocks while paused
 
 Approval-required requests create a ledger and approval request but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action. Approval release creates the task chain; it does not run unless `--run-after-approval` is explicitly used.
 
 Failed steps are not hidden. `universal-recover` requeues failures while retry budget remains, clears stale results, records retry evidence, and marks exhausted tasks `ESCALATED` for operator review.
 
 Unfinished work can be stopped explicitly with `universal-cancel`. Queued/running/waiting tasks become `CANCELLED`, waiting approval records do not release tasks, completed work is preserved, and future runner calls are blocked with cancellation evidence.
+
+Unfinished work can also be held without ending it. `universal-pause` moves queued or waiting work to `PAUSED`, records the reason, and blocks future runner calls. `universal-resume` returns task-backed work to `QUEUED` or approval-gated work to `WAITING_APPROVAL` without silently releasing tasks.
 
 `universal-health` is the triage view. It reports risk level, execution counts by status, step counts, waiting approvals, failed tasks, escalations, stale queued work, dependency blockers, and recommended next actions.
