@@ -25,6 +25,7 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["checkpoint_rollback"] is True
     assert result["checks"]["outcome_evaluator"] is True
     assert result["checks"]["autonomous_goal_selection"] is True
+    assert result["checks"]["failure_learning"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -499,3 +500,76 @@ def test_autonomous_goal_cli_selects_and_routes(tmp_path):
     assert data["ready"] is True
     assert data["decision"]["selected_goal"]["source"] == "outcome-evaluator"
     assert data["decision"]["routed_plan"]["ready"] is True
+
+
+
+def test_failure_learning_creates_lessons_and_rules(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    first = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    second = orchestrator.universal_route("Build another small verified automation script.", execute=True)
+    for result in [first, second]:
+        task = orchestrator.tasks.load(result["execution"]["task_ids"][0])
+        task.status = TaskStatus.FAILED
+        task.result = "missing dependency: fake-package"
+        orchestrator.tasks.save(task)
+
+    report = orchestrator.autonomous_failure_learning_cycle(min_occurrences=2)["learning"]
+    assert report["patterns_found"] == 1
+    assert report["lessons_created"] == 1
+    rule = report["recovery_rules"][0]
+    assert "Verify dependencies" in rule["rule"]
+    assert rule["memory_id"]
+
+
+def test_failure_learning_influences_autonomous_goal(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    task = orchestrator.tasks.load(result["execution"]["task_ids"][0])
+    task.status = TaskStatus.FAILED
+    task.result = "timeout while running verification"
+    orchestrator.tasks.save(task)
+    orchestrator.autonomous_failure_learning_cycle()
+    orchestrator.recover_universal_execution(result["execution"]["execution_id"])
+
+    decision = orchestrator.autonomous_goal_cycle()["decision"]
+    sources = [candidate["source"] for candidate in decision["candidates"]]
+    assert "failure-learning" in sources
+    learned = next(candidate for candidate in decision["candidates"] if candidate["source"] == "failure-learning")
+    assert "Apply learned recovery rule" in learned["objective"]
+
+
+def test_failure_learning_cli(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    workspace = str(tmp_path / "cli-failure-learning")
+    route = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "universal-execute", "--workspace", workspace, "--text", "Build a small verified automation script."],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    execution_id = json.loads(route.stdout)["execution"]["execution_id"]
+    # Mark failure through public Python API because CLI intentionally avoids arbitrary mutation commands.
+    script = f"""
+from gizmo.orchestrator.orchestrator import GizmoOrchestrator
+from gizmo.core.models import TaskStatus
+o = GizmoOrchestrator({workspace!r})
+r = o.universal_execution.refresh({execution_id!r})
+t = o.tasks.load(r.task_ids[0])
+t.status = TaskStatus.FAILED
+t.result = 'assert failed in verification smoke'
+o.tasks.save(t)
+"""
+    subprocess.run([sys.executable, "-c", script], check=True, text=True, capture_output=True)
+    learned = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "autonomous-learn-failures", "--workspace", workspace],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    data = json.loads(learned.stdout)
+    assert data["ready"] is True
+    assert data["learning"]["patterns_found"] >= 1
+    assert data["learning"]["recovery_rules"]

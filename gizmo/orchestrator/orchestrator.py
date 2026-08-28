@@ -20,6 +20,7 @@ from gizmo.core.store import JsonStore
 from gizmo.github.api_adapter import GitHubApiAdapter
 from gizmo.github.workspace import GitHubWorkspaceLoop
 from gizmo.ideas.goal_loop import AutonomousGoalLoop
+from gizmo.ideas.failure_learning import FailureLearningLoop
 from gizmo.memory.memory_system import MemorySystem
 from gizmo.monitoring.cost_manager import CostManager
 from gizmo.monitoring.logger import AuditLogger
@@ -72,6 +73,7 @@ class GizmoOrchestrator:
         self.generation = GenerationProviderRegistry(self.store)
         self.unreal_integration = UnrealIntegrationLayer(self.store, self.unreal)
         self.goal_loop = AutonomousGoalLoop(self)
+        self.failure_learning = FailureLearningLoop(self)
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -92,6 +94,13 @@ class GizmoOrchestrator:
             "node": bool(shutil.which("node")),
             "unreal": self.unreal.detect(),
         }
+
+    def autonomous_failure_learning_cycle(self, *, min_occurrences: int = 1) -> dict[str, Any]:
+        """Learn reusable recovery rules from failed universal execution evidence."""
+        report = self.failure_learning.learn(min_occurrences=min_occurrences)
+        result = {"ready": True, "learning": report.to_dict()}
+        self.audit.log("agent-01", None, "autonomous.failure_learning", "learned", patterns=report.patterns_found, lessons=report.lessons_created)
+        return result
 
     def autonomous_goal_cycle(self, *, route: bool = False, execute: bool = False) -> dict[str, Any]:
         """Select GIZMO's next goal from health, outcomes, queues, and memory signals."""
@@ -272,6 +281,7 @@ class GizmoOrchestrator:
             "checkpoint_rollback": self._acceptance_checkpoint_rollback_check(),
             "outcome_evaluator": self._acceptance_outcome_evaluator_check(),
             "autonomous_goal_selection": self._acceptance_autonomous_goal_selection_check(),
+            "failure_learning": self._acceptance_failure_learning_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -355,6 +365,16 @@ class GizmoOrchestrator:
         decision = self.autonomous_goal_cycle(route=True)["decision"]
         selected = decision["selected_goal"]
         return bool(selected["objective"]) and selected["score"] > 0 and decision["routed_plan"] is not None and bool(decision["memory_id"])
+
+
+    def _acceptance_failure_learning_check(self) -> bool:
+        route = self.universal_route("Build a tiny failure learning smoke test.", execute=True)
+        task = self.tasks.load(route["execution"]["task_ids"][0])
+        task.status = TaskStatus.FAILED
+        task.result = "simulated dependency missing for failure learning"
+        self.tasks.save(task)
+        report = self.autonomous_failure_learning_cycle()["learning"]
+        return report["patterns_found"] >= 1 and report["lessons_created"] >= 1 and bool(report["recovery_rules"])
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:

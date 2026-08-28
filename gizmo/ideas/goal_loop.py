@@ -87,6 +87,7 @@ class AutonomousGoalLoop:
             "chosen_next": self.store.read("ideas", "chosen_next.json", default=[])[-12:],
             "thinking": self.store.read("ideas", "latest_thinking.json", default={}),
             "last_goal": self.store.read("goals", "latest_goal_decision.json", default={}),
+            "failure_learning": self.store.read("learning", "latest_failure_learning.json", default={}),
         }
 
     def _build_candidates(self, context: dict[str, Any]) -> list[AutonomousGoalCandidate]:
@@ -121,6 +122,21 @@ class AutonomousGoalLoop:
                 evidence=[str(item) for item in (outcome.get("blockers") or outcome.get("next_actions") or [])[:4]],
                 recommended_command="universal-evaluate",
             ))
+        learning = context.get("failure_learning") or {}
+        for rule in (learning.get("recovery_rules") or [])[:6]:
+            candidates.append(self._candidate(
+                objective=f"Apply learned recovery rule for {rule.get('capability', 'unknown capability')}: {rule.get('rule', 'inspect failure pattern')}",
+                lane="failure-learning",
+                source="failure-learning",
+                reason=str(rule.get("lesson", "Recovered failure pattern should shape the next run."))[:500],
+                urgency=0.69 if rule.get("severity") == "HIGH" else 0.56,
+                value=0.84,
+                confidence=float(rule.get("confidence", 0.72)),
+                risk=0.16,
+                evidence=[str(rule.get("signature", "failure-pattern")), str(rule.get("memory_id", "lesson"))],
+                recommended_command="autonomous-learn-failures",
+            ))
+
         for item in context.get("next_queue") or []:
             objective = str(item.get("objective", "Execute queued body next action"))
             candidates.append(self._candidate(

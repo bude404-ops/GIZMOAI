@@ -8,7 +8,7 @@ Creator request -> intent classification -> task decomposition -> capability dis
 
 Safe executable requests also pass through an execution ledger:
 
-route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> checkpoint/rollback -> pause/resume -> recovery/escalation/cancellation -> outcome evaluation -> autonomous goal selection -> health report -> evidence -> refreshable execution record.
+route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> checkpoint/rollback -> pause/resume -> recovery/escalation/cancellation -> outcome evaluation -> failure-pattern learning -> autonomous goal selection -> health report -> evidence -> refreshable execution record.
 
 ## Capability Registry
 
@@ -112,7 +112,8 @@ The proof covers:
 - pause/resume that holds unfinished work reversibly and blocks runner progress until resumed
 - checkpoint/rollback that restores execution and task state to a known safe point
 - outcome evaluation that judges whether execution actually solved the requested intent
-- autonomous goal selection that ranks health, outcome, body queue, upgrade queue, and thinking signals into the next objective
+- autonomous goal selection that ranks health, outcome, body queue, upgrade queue, learned failure rules, and thinking signals into the next objective
+- failure-pattern learning that turns failed/escalated execution evidence into persistent lessons and recovery rules
 
 ## Execution Handoff
 
@@ -149,6 +150,7 @@ Create a checkpoint, rollback, or evaluate whether work solved the original inte
 python -m gizmo.core.cli universal-checkpoint --execution-id <execution_id> --label "before risky run"
 python -m gizmo.core.cli universal-rollback --execution-id <execution_id> --checkpoint-id <checkpoint_id> --reason "restore safe point"
 python -m gizmo.core.cli universal-evaluate --execution-id <execution_id>
+python -m gizmo.core.cli autonomous-learn-failures --min-occurrences 1
 python -m gizmo.core.cli autonomous-goal --route
 ```
 
@@ -192,6 +194,7 @@ The result includes an `execution` record with:
 - rollback evidence showing restored checkpoint, previous status, force flag, and restored task IDs
 - outcome evaluation showing verdict, confidence, blockers, evidence presence, and next actions
 - autonomous goal decisions showing selected objective, score, source, lane, evidence, memory ID, and optional routed plan
+- failure-learning reports showing patterns, lessons, recovery rules, severity, confidence, and next actions
 
 Approval-required requests create a ledger and approval request but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action. Approval release creates the task chain; it does not run unless `--run-after-approval` is explicitly used.
 
@@ -205,6 +208,8 @@ Unfinished work can also be held without ending it. `universal-pause` moves queu
 
 `universal-evaluate` is the first operator-intelligence layer. It judges execution against status, step completion, runner evidence, verification evidence, blockers, and checkpoint availability, then returns `SOLVED`, `NEEDS_REVIEW`, or `NOT_SOLVED` with confidence and next actions.
 
-`autonomous-goal` is the first self-directed goal loop. It reads health, the latest outcome verdict, agent-body next actions, autonomous thinker upgrades, and chosen ideas, then records the highest-scoring next objective. With `--route`, it creates a universal plan for the selected goal without needing the operator to name the next step.
+`autonomous-learn-failures` is the first self-improvement loop. It reads failed and escalated universal execution evidence, groups recurring signatures, writes durable lessons, and creates recovery rules for future cycles.
+
+`autonomous-goal` is the first self-directed goal loop. It reads health, the latest outcome verdict, learned failure rules, agent-body next actions, autonomous thinker upgrades, and chosen ideas, then records the highest-scoring next objective. With `--route`, it creates a universal plan for the selected goal without needing the operator to name the next step.
 
 `universal-health` is the triage view. It reports risk level, execution counts by status, step counts, waiting approvals, paused work, checkpoint availability, failed tasks, escalations, stale queued work, dependency blockers, and recommended next actions.

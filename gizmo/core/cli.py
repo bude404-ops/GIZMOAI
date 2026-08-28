@@ -28,7 +28,7 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-route", "universal-execute", "universal-run", "universal-recover", "universal-cancel", "universal-checkpoint", "universal-rollback", "universal-evaluate", "universal-pause", "universal-resume", "universal-health", "universal-approve", "universal-acceptance", "universal-learn", "app-factory-cycle", "autonomous-think", "autonomous-goal", "prototype-cycle", "cloud-vault-sync", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-route", "universal-execute", "universal-run", "universal-recover", "universal-cancel", "universal-checkpoint", "universal-rollback", "universal-evaluate", "universal-pause", "universal-resume", "universal-health", "universal-approve", "universal-acceptance", "universal-learn", "app-factory-cycle", "autonomous-think", "autonomous-goal", "autonomous-learn-failures", "prototype-cycle", "cloud-vault-sync", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     parser.add_argument("--user-id", default="1")
@@ -51,6 +51,7 @@ def main() -> None:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--route", action="store_true")
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--min-occurrences", type=int, default=1)
     args = parser.parse_args()
     orchestrator = GizmoOrchestrator(args.workspace)
     if args.command == "bootstrap":
@@ -142,6 +143,8 @@ def main() -> None:
         emit(report.to_dict())
     elif args.command == "autonomous-goal":
         emit(orchestrator.autonomous_goal_cycle(route=args.route, execute=args.execute))
+    elif args.command == "autonomous-learn-failures":
+        emit(orchestrator.autonomous_failure_learning_cycle(min_occurrences=args.min_occurrences))
     elif args.command == "prototype-cycle":
         report = SafeMiniAppPrototyper(orchestrator.brain_core, orchestrator.store).run(limit=3, allow_publish=False)
         emit(report.to_dict())
