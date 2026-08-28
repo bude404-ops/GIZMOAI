@@ -6,6 +6,7 @@ before a route can be called complete.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -190,6 +191,7 @@ class UniversalExecutionLedger:
         step_counts = {"total": 0, "queued": 0, "paused": 0, "running": 0, "waiting": 0, "failed": 0, "escalated": 0, "completed": 0, "cancelled": 0, "blocked": 0}
         waiting_approval: list[dict[str, Any]] = []
         paused: list[dict[str, Any]] = []
+        checkpointed: list[dict[str, Any]] = []
         failed: list[dict[str, Any]] = []
         escalated: list[dict[str, Any]] = []
         stale: list[dict[str, Any]] = []
@@ -201,6 +203,9 @@ class UniversalExecutionLedger:
             if record.status == "WAITING_APPROVAL":
                 approval = record.evidence.get("approval_request", {})
                 waiting_approval.append({"execution_id": record.execution_id, "approval_id": approval.get("id"), "objective": record.objective, "age_minutes": age_minutes})
+            checkpoint = self.latest_checkpoint(record.execution_id)
+            if checkpoint:
+                checkpointed.append({"execution_id": record.execution_id, "checkpoint_id": checkpoint.get("checkpoint_id"), "label": checkpoint.get("label"), "created_at": checkpoint.get("created_at")})
             if record.status == "PAUSED":
                 pause = record.evidence.get("pause", {})
                 paused.append({"execution_id": record.execution_id, "objective": record.objective, "reason": pause.get("reason"), "age_minutes": age_minutes})
@@ -259,6 +264,7 @@ class UniversalExecutionLedger:
             "step_counts": step_counts,
             "waiting_approval": waiting_approval,
             "paused": paused,
+            "checkpointed": checkpointed,
             "failed": failed,
             "escalated": escalated,
             "stale": stale,
@@ -344,6 +350,128 @@ class UniversalExecutionLedger:
         record.evidence["cancellation"] = {"cancelled": True, "reason": reason, "cancelled_items": cancelled, "preserved_terminal_items": preserved, "updated_at": now_iso()}
         self._persist(record)
         return record
+
+
+    def list_checkpoints(self, execution_id: str) -> list[dict[str, Any]]:
+        """Return checkpoints for an execution, newest first."""
+        folder = self.store.path("universal", "checkpoints", execution_id)
+        if not folder.exists():
+            return []
+        checkpoints: list[dict[str, Any]] = []
+        for path in folder.glob("*.json"):
+            data = self.store.read("universal", "checkpoints", execution_id, path.name)
+            if data:
+                checkpoints.append(data)
+        return sorted(checkpoints, key=lambda item: item.get("created_at", ""), reverse=True)
+
+    def latest_checkpoint(self, execution_id: str) -> dict[str, Any] | None:
+        checkpoints = self.list_checkpoints(execution_id)
+        return checkpoints[0] if checkpoints else None
+
+    def create_checkpoint(self, execution_id: str, *, label: str = "manual checkpoint", reason: str = "operator checkpoint") -> dict[str, Any]:
+        """Snapshot an execution record and linked task state for rollback."""
+        record = self.refresh(execution_id)
+        checkpoint_id = f"chk-{now_iso().replace(':', '').replace('.', '').replace('-', '')}"
+        tasks: dict[str, Any] = {}
+        for task_id in record.task_ids:
+            tasks[task_id] = self.tasks.load(task_id).to_dict()
+        checkpoint = {
+            "checkpoint_id": checkpoint_id,
+            "execution_id": record.execution_id,
+            "label": label,
+            "reason": reason,
+            "execution": deepcopy(record.to_dict()),
+            "tasks": tasks,
+            "created_at": now_iso(),
+        }
+        self.store.write(checkpoint, "universal", "checkpoints", execution_id, f"{checkpoint_id}.json")
+        record.evidence["checkpoint"] = {"available": True, "checkpoint_id": checkpoint_id, "label": label, "reason": reason, "task_count": len(tasks), "updated_at": now_iso()}
+        self._persist(record)
+        return checkpoint
+
+    def rollback_execution(self, execution_id: str, *, checkpoint_id: str | None = None, reason: str = "operator rollback", force: bool = False) -> UniversalExecutionRecord:
+        """Restore an execution and linked tasks from a checkpoint."""
+        current = self.refresh(execution_id)
+        terminal = {"COMPLETED", "CANCELLED", "ESCALATED"}
+        if current.status in terminal and not force:
+            current.evidence["rollback"] = {"rolled_back": False, "reason": f"execution is terminal ({current.status}); use force to rollback", "updated_at": now_iso()}
+            self._persist(current)
+            return current
+        checkpoint = None
+        if checkpoint_id:
+            checkpoint = self.store.read("universal", "checkpoints", execution_id, f"{checkpoint_id}.json")
+        else:
+            checkpoint = self.latest_checkpoint(execution_id)
+        if not checkpoint:
+            current.evidence["rollback"] = {"rolled_back": False, "reason": "no checkpoint available", "updated_at": now_iso()}
+            self._persist(current)
+            return current
+        restored_data = deepcopy(checkpoint["execution"])
+        restored_tasks = checkpoint.get("tasks", {})
+        before = {step.get("task_id"): step.get("status") for step in current.steps if step.get("task_id")}
+        for task_data in restored_tasks.values():
+            task = self.tasks.load(task_data["id"])
+            restored = type(task).from_dict(task_data)
+            restored.record("rollback", "Task restored from universal execution checkpoint", checkpoint_id=checkpoint["checkpoint_id"], reason=reason, previous_status=before.get(restored.id))
+            self.tasks.save(restored)
+        restored_data.setdefault("evidence", {})["rollback"] = {
+            "rolled_back": True,
+            "checkpoint_id": checkpoint["checkpoint_id"],
+            "label": checkpoint.get("label"),
+            "reason": reason,
+            "force": force,
+            "restored_task_ids": sorted(restored_tasks.keys()),
+            "previous_status": current.status,
+            "updated_at": now_iso(),
+        }
+        restored_data["updated_at"] = now_iso()
+        record = UniversalExecutionRecord(**restored_data)
+        self._persist(record)
+        return self.refresh(record.execution_id)
+
+    def evaluate_outcome(self, execution_id: str) -> dict[str, Any]:
+        """Judge whether execution evidence actually satisfies the plan's acceptance intent."""
+        record = self.refresh(execution_id)
+        statuses = [step.get("status") for step in record.steps]
+        terminal_success = record.status == "COMPLETED" and statuses and all(status == TaskStatus.COMPLETED.value for status in statuses)
+        blockers = []
+        if record.status in {"FAILED", "ESCALATED", "CANCELLED", "PAUSED", "WAITING_APPROVAL"}:
+            blockers.append(f"execution status is {record.status}")
+        incomplete = [step.get("name") for step in record.steps if step.get("status") != TaskStatus.COMPLETED.value]
+        if incomplete:
+            blockers.append(f"incomplete steps: {', '.join(incomplete[:4])}")
+        has_runner = bool(record.evidence.get("runner"))
+        has_verification = bool(record.evidence.get("verification_plan") or record.acceptance_checks)
+        confidence = 0.92 if terminal_success and has_runner and has_verification else (0.55 if not blockers else 0.25)
+        verdict = "SOLVED" if confidence >= 0.85 else ("NEEDS_REVIEW" if confidence >= 0.5 else "NOT_SOLVED")
+        next_actions: list[str] = []
+        if verdict != "SOLVED":
+            if record.status == "FAILED":
+                next_actions.append("Run universal-recover or rollback to a checkpoint")
+            elif record.status == "PAUSED":
+                next_actions.append("Resume or cancel paused execution")
+            elif record.status == "WAITING_APPROVAL":
+                next_actions.append("Approve or reject waiting execution")
+            elif record.status == "CANCELLED":
+                next_actions.append("Rollback from checkpoint if work should continue")
+            else:
+                next_actions.append("Run remaining ready steps or inspect blockers")
+        evaluation = {
+            "ready": True,
+            "execution_id": record.execution_id,
+            "verdict": verdict,
+            "confidence": confidence,
+            "objective": record.objective,
+            "status": record.status,
+            "blockers": blockers,
+            "evidence_present": {"runner": has_runner, "verification": has_verification, "checkpoint": bool(self.latest_checkpoint(execution_id))},
+            "next_actions": next_actions or ["No intervention needed"],
+            "updated_at": now_iso(),
+        }
+        record.evidence["outcome_evaluation"] = evaluation
+        self._persist(record)
+        self.store.write(evaluation, "universal", "latest_outcome_evaluation.json")
+        return evaluation
 
     def pause_execution(self, execution_id: str, *, reason: str = "operator paused") -> UniversalExecutionRecord:
         """Pause unfinished universal execution work without making it terminal."""

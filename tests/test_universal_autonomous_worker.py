@@ -22,6 +22,8 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["health_report"] is True
     assert result["checks"]["cancellation"] is True
     assert result["checks"]["pause_resume"] is True
+    assert result["checks"]["checkpoint_rollback"] is True
+    assert result["checks"]["outcome_evaluator"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -319,3 +321,104 @@ def test_universal_pause_preserves_completed_execution(tmp_path):
     assert paused["status"] == "COMPLETED"
     assert paused["evidence"]["pause"]["paused"] is False
     assert paused["evidence"]["pause"]["reason"] == "execution already completed"
+
+
+
+def test_universal_checkpoint_and_rollback_restore_failed_task(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+    task_id = result["execution"]["task_ids"][0]
+
+    checkpoint = orchestrator.checkpoint_universal_execution(execution_id, label="before risky run", reason="safe point")["checkpoint"]
+    damaged = orchestrator.tasks.load(task_id)
+    damaged.status = TaskStatus.FAILED
+    damaged.result = "bad mutation"
+    orchestrator.tasks.save(damaged)
+
+    rolled = orchestrator.rollback_universal_execution(execution_id, checkpoint_id=checkpoint["checkpoint_id"], reason="restore safe point")["execution"]
+    restored = orchestrator.tasks.load(task_id)
+    assert rolled["status"] == "QUEUED"
+    assert rolled["evidence"]["rollback"]["rolled_back"] is True
+    assert rolled["evidence"]["rollback"]["checkpoint_id"] == checkpoint["checkpoint_id"]
+    assert restored.status == TaskStatus.QUEUED
+    assert restored.result == ""
+    assert restored.execution_history[-1]["action"] == "rollback"
+
+
+def test_universal_rollback_requires_force_for_terminal_execution(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+    checkpoint = orchestrator.checkpoint_universal_execution(execution_id, label="terminal guard")["checkpoint"]
+    orchestrator.cancel_universal_execution(execution_id, reason="terminal test")
+
+    blocked = orchestrator.rollback_universal_execution(execution_id, checkpoint_id=checkpoint["checkpoint_id"])["execution"]
+    assert blocked["status"] == "CANCELLED"
+    assert blocked["evidence"]["rollback"]["rolled_back"] is False
+
+    forced = orchestrator.rollback_universal_execution(execution_id, checkpoint_id=checkpoint["checkpoint_id"], force=True, reason="force restore")["execution"]
+    assert forced["status"] == "QUEUED"
+    assert forced["evidence"]["rollback"]["rolled_back"] is True
+    assert forced["evidence"]["rollback"]["force"] is True
+
+
+def test_universal_health_reports_checkpoint_availability(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    checkpoint = orchestrator.checkpoint_universal_execution(result["execution"]["execution_id"], label="health visible")["checkpoint"]
+
+    health = orchestrator.universal_health_report()
+    assert any(item["checkpoint_id"] == checkpoint["checkpoint_id"] for item in health["checkpointed"])
+
+
+def test_universal_outcome_evaluator_marks_unsolved_then_solved(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution_id = result["execution"]["execution_id"]
+
+    before = orchestrator.evaluate_universal_outcome(execution_id)
+    assert before["verdict"] == "NOT_SOLVED"
+    assert before["blockers"]
+
+    orchestrator.run_universal_execution(execution_id)
+    after = orchestrator.evaluate_universal_outcome(execution_id)
+    assert after["verdict"] == "SOLVED"
+    assert after["confidence"] >= 0.85
+    assert after["next_actions"] == ["No intervention needed"]
+
+
+def test_universal_checkpoint_rollback_and_evaluate_cli(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    workspace = str(tmp_path / "cli")
+    route = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "universal-execute", "--workspace", workspace, "--text", "Build a small verified automation script."],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    execution_id = json.loads(route.stdout)["execution"]["execution_id"]
+    checkpoint = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "universal-checkpoint", "--workspace", workspace, "--execution-id", execution_id, "--label", "cli safe"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    checkpoint_id = json.loads(checkpoint.stdout)["checkpoint"]["checkpoint_id"]
+    evaluation = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "universal-evaluate", "--workspace", workspace, "--execution-id", execution_id],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert json.loads(evaluation.stdout)["verdict"] == "NOT_SOLVED"
+    rollback = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "universal-rollback", "--workspace", workspace, "--execution-id", execution_id, "--checkpoint-id", checkpoint_id, "--reason", "cli restore"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert json.loads(rollback.stdout)["execution"]["evidence"]["rollback"]["rolled_back"] is True

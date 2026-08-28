@@ -159,6 +159,37 @@ class GizmoOrchestrator:
         self.audit.log("agent-01", None, "universal.cancel", cancelled.status, execution_id=cancelled.execution_id, cancellation=cancelled.evidence.get("cancellation", {}))
         return result
 
+    def checkpoint_universal_execution(self, execution_id: str | None = None, *, label: str = "manual checkpoint", reason: str = "operator checkpoint") -> dict[str, Any]:
+        """Create a rollback checkpoint for a universal execution."""
+        record = self.universal_execution.latest() if execution_id is None else self.universal_execution.refresh(execution_id)
+        if record is None:
+            return {"ready": False, "status": "NO_EXECUTION", "message": "No universal execution record exists."}
+        checkpoint = self.universal_execution.create_checkpoint(record.execution_id, label=label, reason=reason)
+        result = {"ready": True, "checkpoint": checkpoint}
+        self.store.write(result, "universal", "latest_checkpoint_result.json")
+        self.audit.log("agent-01", None, "universal.checkpoint", "created", execution_id=record.execution_id, checkpoint_id=checkpoint["checkpoint_id"], label=label)
+        return result
+
+    def rollback_universal_execution(self, execution_id: str | None = None, *, checkpoint_id: str | None = None, reason: str = "operator rollback", force: bool = False) -> dict[str, Any]:
+        """Rollback a universal execution to a checkpoint."""
+        record = self.universal_execution.latest() if execution_id is None else self.universal_execution.refresh(execution_id)
+        if record is None:
+            return {"ready": False, "status": "NO_EXECUTION", "message": "No universal execution record exists."}
+        rolled_back = self.universal_execution.rollback_execution(record.execution_id, checkpoint_id=checkpoint_id, reason=reason, force=force)
+        result = {"ready": True, "execution": rolled_back.to_dict()}
+        self.store.write(result, "universal", "latest_rollback_result.json")
+        self.audit.log("agent-01", None, "universal.rollback", rolled_back.status, execution_id=rolled_back.execution_id, rollback=rolled_back.evidence.get("rollback", {}))
+        return result
+
+    def evaluate_universal_outcome(self, execution_id: str | None = None) -> dict[str, Any]:
+        """Evaluate whether a universal execution actually satisfied its intent."""
+        record = self.universal_execution.latest() if execution_id is None else self.universal_execution.refresh(execution_id)
+        if record is None:
+            return {"ready": False, "status": "NO_EXECUTION", "message": "No universal execution record exists."}
+        evaluation = self.universal_execution.evaluate_outcome(record.execution_id)
+        self.audit.log("agent-01", None, "universal.evaluate", evaluation["verdict"], execution_id=record.execution_id, confidence=evaluation["confidence"])
+        return evaluation
+
     def pause_universal_execution(self, execution_id: str | None = None, *, reason: str = "operator paused") -> dict[str, Any]:
         """Pause unfinished universal execution work without making it terminal."""
         record = self.universal_execution.latest() if execution_id is None else self.universal_execution.refresh(execution_id)
@@ -229,6 +260,8 @@ class GizmoOrchestrator:
             "health_report": self._acceptance_health_report_check(),
             "cancellation": self._acceptance_cancellation_check(),
             "pause_resume": self._acceptance_pause_resume_check(),
+            "checkpoint_rollback": self._acceptance_checkpoint_rollback_check(),
+            "outcome_evaluator": self._acceptance_outcome_evaluator_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -283,6 +316,27 @@ class GizmoOrchestrator:
         blocked = self.run_universal_execution(execution_id)["execution"]
         resumed = self.resume_universal_execution(execution_id, reason="acceptance resume smoke")["execution"]
         return paused["status"] == "PAUSED" and blocked["evidence"]["runner"]["blocked"] == "execution paused" and resumed["status"] == "QUEUED"
+
+
+    def _acceptance_checkpoint_rollback_check(self) -> bool:
+        route = self.universal_route("Build a tiny rollback smoke test.", execute=True)
+        execution_id = route["execution"]["execution_id"]
+        checkpoint = self.checkpoint_universal_execution(execution_id, label="acceptance safe point")["checkpoint"]
+        task = self.tasks.load(route["execution"]["task_ids"][0])
+        task.status = TaskStatus.FAILED
+        task.result = "simulated bad run"
+        self.tasks.save(task)
+        rolled = self.rollback_universal_execution(execution_id, checkpoint_id=checkpoint["checkpoint_id"], reason="acceptance rollback smoke")["execution"]
+        restored = self.tasks.load(route["execution"]["task_ids"][0])
+        return rolled["status"] == "QUEUED" and restored.status == TaskStatus.QUEUED and rolled["evidence"]["rollback"]["rolled_back"] is True
+
+    def _acceptance_outcome_evaluator_check(self) -> bool:
+        route = self.universal_route("Build a tiny evaluator smoke test.", execute=True)
+        execution_id = route["execution"]["execution_id"]
+        before = self.evaluate_universal_outcome(execution_id)
+        self.run_universal_execution(execution_id)
+        after = self.evaluate_universal_outcome(execution_id)
+        return before["verdict"] != "SOLVED" and after["verdict"] == "SOLVED" and after["confidence"] >= 0.85
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:

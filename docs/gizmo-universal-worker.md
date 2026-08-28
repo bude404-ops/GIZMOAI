@@ -8,7 +8,7 @@ Creator request -> intent classification -> task decomposition -> capability dis
 
 Safe executable requests also pass through an execution ledger:
 
-route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> pause/resume -> recovery/escalation/cancellation -> health report -> evidence -> refreshable execution record.
+route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> checkpoint/rollback -> pause/resume -> recovery/escalation/cancellation -> outcome evaluation -> health report -> evidence -> refreshable execution record.
 
 ## Capability Registry
 
@@ -110,6 +110,8 @@ The proof covers:
 - health reporting across waiting approvals, failed steps, escalations, stale queues, and next actions
 - cancellation that stops queued or approval-waiting execution records without releasing hidden work
 - pause/resume that holds unfinished work reversibly and blocks runner progress until resumed
+- checkpoint/rollback that restores execution and task state to a known safe point
+- outcome evaluation that judges whether execution actually solved the requested intent
 
 ## Execution Handoff
 
@@ -138,6 +140,14 @@ Cancel unfinished universal execution work:
 ```bash
 python -m gizmo.core.cli universal-cancel --execution-id <execution_id> --reason "operator changed priority"
 python -m gizmo.core.cli universal-cancel --reason "cancel latest execution"
+```
+
+Create a checkpoint, rollback, or evaluate whether work solved the original intent:
+
+```bash
+python -m gizmo.core.cli universal-checkpoint --execution-id <execution_id> --label "before risky run"
+python -m gizmo.core.cli universal-rollback --execution-id <execution_id> --checkpoint-id <checkpoint_id> --reason "restore safe point"
+python -m gizmo.core.cli universal-evaluate --execution-id <execution_id>
 ```
 
 Pause or resume unfinished universal execution work:
@@ -176,6 +186,9 @@ The result includes an `execution` record with:
 - recovery evidence showing requeued and escalated task IDs
 - cancellation evidence showing cancelled items, preserved terminal items, and operator reason
 - pause/resume evidence showing held items, resumed items, and runner blocks while paused
+- checkpoint evidence showing saved execution/task state, label, reason, and task count
+- rollback evidence showing restored checkpoint, previous status, force flag, and restored task IDs
+- outcome evaluation showing verdict, confidence, blockers, evidence presence, and next actions
 
 Approval-required requests create a ledger and approval request but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action. Approval release creates the task chain; it does not run unless `--run-after-approval` is explicitly used.
 
@@ -185,4 +198,8 @@ Unfinished work can be stopped explicitly with `universal-cancel`. Queued/runnin
 
 Unfinished work can also be held without ending it. `universal-pause` moves queued or waiting work to `PAUSED`, records the reason, and blocks future runner calls. `universal-resume` returns task-backed work to `QUEUED` or approval-gated work to `WAITING_APPROVAL` without silently releasing tasks.
 
-`universal-health` is the triage view. It reports risk level, execution counts by status, step counts, waiting approvals, failed tasks, escalations, stale queued work, dependency blockers, and recommended next actions.
+`universal-checkpoint` captures execution and linked task state before risky moves. `universal-rollback` restores that state from the latest or named checkpoint; terminal records require `--force` so history is not rewritten casually.
+
+`universal-evaluate` is the first operator-intelligence layer. It judges execution against status, step completion, runner evidence, verification evidence, blockers, and checkpoint availability, then returns `SOLVED`, `NEEDS_REVIEW`, or `NOT_SOLVED` with confidence and next actions.
+
+`universal-health` is the triage view. It reports risk level, execution counts by status, step counts, waiting approvals, paused work, checkpoint availability, failed tasks, escalations, stale queued work, dependency blockers, and recommended next actions.
