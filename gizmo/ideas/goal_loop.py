@@ -89,6 +89,7 @@ class AutonomousGoalLoop:
             "last_goal": self.store.read("goals", "latest_goal_decision.json", default={}),
             "failure_learning": self.store.read("learning", "latest_failure_learning.json", default={}),
             "progress": self.store.read("progress", "latest_progress_evaluation.json", default={}),
+            "campaign": self.store.read("strategy", "latest_campaign.json", default={}),
         }
 
     def _build_candidates(self, context: dict[str, Any]) -> list[AutonomousGoalCandidate]:
@@ -96,6 +97,22 @@ class AutonomousGoalLoop:
         health = context.get("health") or {}
         outcome = context.get("outcome") or {}
         progress = context.get("progress") or {}
+        campaign = context.get("campaign") or {}
+        if campaign and campaign.get("milestones"):
+            open_milestone = next((item for item in campaign.get("milestones", []) if item.get("status") == "PLANNED"), campaign.get("milestones", [])[0])
+            candidates.append(self._candidate(
+                objective=f"Advance strategic campaign: {open_milestone.get('objective', campaign.get('next_objective', 'continue campaign'))}",
+                lane="strategic-campaign",
+                source="strategy-planner",
+                reason=str(campaign.get("thesis", "Strategic campaign is active and should drive the next autonomous move."))[:500],
+                urgency=0.66,
+                value=0.9,
+                confidence=0.78,
+                risk=0.16,
+                evidence=[str(campaign.get("campaign_id", "campaign")), str(open_milestone.get("id", "milestone"))],
+                recommended_command="autonomous-strategy",
+            ))
+
         if progress and progress.get("verdict") in {"STALLED", "MIXED_PROGRESS"}:
             gaps = progress.get("strategic_gaps") or progress.get("blockers") or []
             focus = gaps[0] if gaps else "Improve long-horizon autonomous progress"

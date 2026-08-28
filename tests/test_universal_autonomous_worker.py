@@ -27,6 +27,7 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["autonomous_goal_selection"] is True
     assert result["checks"]["failure_learning"] is True
     assert result["checks"]["long_horizon_progress"] is True
+    assert result["checks"]["strategic_campaign"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -629,3 +630,62 @@ def test_autonomous_progress_cli(tmp_path):
     assert data["ready"] is True
     assert data["progress"]["score"] > 0
     assert data["progress"]["memory_id"]
+
+
+
+def test_autonomous_strategy_creates_campaign_and_routes_next_objective(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    orchestrator.store.write({
+        "evaluation_id": "progress-strategy-test",
+        "verdict": "STALLED",
+        "score": 0.39,
+        "confidence": 0.78,
+        "trend": "DECLINING",
+        "strategic_gaps": ["Execution outcomes are not consistently closing as solved"],
+        "blockers": ["Latest execution outcome is not solved"],
+        "next_actions": ["Route the highest strategic gap into a universal execution plan"],
+    }, "progress", "latest_progress_evaluation.json")
+    orchestrator.autonomous_goal_cycle()
+    campaign = orchestrator.autonomous_strategy_cycle(horizon="next 2 cycles", route=True)["campaign"]
+    assert campaign["campaign_id"].startswith("campaign-")
+    assert campaign["memory_id"]
+    assert len(campaign["milestones"]) >= 3
+    assert campaign["milestones"][0]["lane"] == "blocker-clearance"
+    assert campaign["next_objective"] == campaign["milestones"][0]["objective"]
+    assert campaign["routed_plan"]["ready"] is True
+    assert campaign["progress_context"]["verdict"] == "STALLED"
+
+
+def test_strategy_planner_influences_goal_loop(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    campaign = orchestrator.autonomous_strategy_cycle()["campaign"]
+    decision = orchestrator.autonomous_goal_cycle()["decision"]
+    assert any(candidate["source"] == "strategy-planner" for candidate in decision["candidates"])
+    strategy_candidate = next(candidate for candidate in decision["candidates"] if candidate["source"] == "strategy-planner")
+    assert campaign["campaign_id"] in strategy_candidate["evidence"]
+    assert "Advance strategic campaign" in strategy_candidate["objective"]
+
+
+def test_autonomous_strategy_cli(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    workspace = str(tmp_path / "cli-strategy")
+    progress = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "autonomous-progress", "--workspace", workspace, "--cycles", "2"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert json.loads(progress.stdout)["ready"] is True
+    strategy = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "autonomous-strategy", "--workspace", workspace, "--horizon", "next 2 cycles", "--route"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    data = json.loads(strategy.stdout)
+    assert data["ready"] is True
+    assert data["campaign"]["memory_id"]
+    assert data["campaign"]["routed_plan"]["ready"] is True

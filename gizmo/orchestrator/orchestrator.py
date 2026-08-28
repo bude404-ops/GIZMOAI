@@ -22,6 +22,7 @@ from gizmo.github.workspace import GitHubWorkspaceLoop
 from gizmo.ideas.goal_loop import AutonomousGoalLoop
 from gizmo.ideas.failure_learning import FailureLearningLoop
 from gizmo.ideas.progress_evaluator import AutonomousProgressEvaluator
+from gizmo.ideas.strategy_planner import AutonomousStrategyPlanner
 from gizmo.memory.memory_system import MemorySystem
 from gizmo.monitoring.cost_manager import CostManager
 from gizmo.monitoring.logger import AuditLogger
@@ -76,6 +77,7 @@ class GizmoOrchestrator:
         self.goal_loop = AutonomousGoalLoop(self)
         self.failure_learning = FailureLearningLoop(self)
         self.progress_evaluator = AutonomousProgressEvaluator(self)
+        self.strategy_planner = AutonomousStrategyPlanner(self)
 
     def bootstrap(self) -> dict[str, Any]:
         self.security.set_mode(OperatingMode.MANUAL)
@@ -96,6 +98,13 @@ class GizmoOrchestrator:
             "node": bool(shutil.which("node")),
             "unreal": self.unreal.detect(),
         }
+
+    def autonomous_strategy_cycle(self, *, horizon: str = "next 3 cycles", route: bool = False, execute: bool = False) -> dict[str, Any]:
+        """Create a multi-step autonomous campaign from goals and progress evidence."""
+        campaign = self.strategy_planner.plan(horizon=horizon, route=route, execute=execute)
+        result = {"ready": True, "campaign": campaign.to_dict()}
+        self.audit.log("agent-01", None, "autonomous.strategy", "planned", campaign_id=campaign.campaign_id, next_objective=campaign.next_objective)
+        return result
 
     def autonomous_progress_cycle(self, *, cycles: int = 5) -> dict[str, Any]:
         """Evaluate whether autonomous activity is producing long-horizon progress."""
@@ -292,6 +301,7 @@ class GizmoOrchestrator:
             "autonomous_goal_selection": self._acceptance_autonomous_goal_selection_check(),
             "failure_learning": self._acceptance_failure_learning_check(),
             "long_horizon_progress": self._acceptance_long_horizon_progress_check(),
+            "strategic_campaign": self._acceptance_strategic_campaign_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -394,6 +404,13 @@ class GizmoOrchestrator:
         self.autonomous_goal_cycle()
         report = self.autonomous_progress_cycle()["progress"]
         return report["verdict"] in {"ADVANCING", "MIXED_PROGRESS", "STALLED"} and report["score"] > 0 and bool(report["memory_id"])
+
+
+    def _acceptance_strategic_campaign_check(self) -> bool:
+        self.autonomous_progress_cycle()
+        self.autonomous_goal_cycle()
+        campaign = self.autonomous_strategy_cycle(route=True)["campaign"]
+        return bool(campaign["memory_id"]) and bool(campaign["milestones"]) and bool(campaign["routed_plan"]) and bool(campaign["next_objective"])
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:

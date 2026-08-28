@@ -72,6 +72,7 @@ class CloudBrainCycle:
     universal_worker: dict[str, Any] = field(default_factory=dict)
     autonomous_goal: dict[str, Any] = field(default_factory=dict)
     progress_evaluation: dict[str, Any] = field(default_factory=dict)
+    strategic_campaign: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -158,6 +159,9 @@ class CloudAutonomousBrainRunner:
         cycle.progress_evaluation = self.orchestrator.autonomous_progress_cycle()["progress"]
         if cycle.progress_evaluation.get("memory_id"):
             cycle.memories_created.append(cycle.progress_evaluation["memory_id"])
+        cycle.strategic_campaign = self.orchestrator.autonomous_strategy_cycle(route=True, execute=False)["campaign"]
+        if cycle.strategic_campaign.get("memory_id"):
+            cycle.memories_created.append(cycle.strategic_campaign["memory_id"])
         cycle.memories_created.extend(thinking.memories_created)
         prototype_report = self.prototyper.run(limit=3, allow_publish=False)
         cycle.prototypes = prototype_report.to_dict()
@@ -259,6 +263,7 @@ class CloudAutonomousBrainRunner:
             "universal_latest_intent": cycle.universal_worker.get("plan", {}).get("classification", {}).get("category"),
             "progress_verdict": cycle.progress_evaluation.get("verdict"),
             "progress_score": cycle.progress_evaluation.get("score"),
+            "strategic_campaign_id": cycle.strategic_campaign.get("campaign_id"),
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }
