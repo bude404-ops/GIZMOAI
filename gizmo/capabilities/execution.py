@@ -141,6 +141,8 @@ class UniversalExecutionLedger:
             status = "COMPLETED"
         elif any(status == TaskStatus.FAILED.value for status in statuses):
             status = "FAILED"
+        elif any(status == TaskStatus.ESCALATED.value for status in statuses):
+            status = "ESCALATED"
         elif any(status in {TaskStatus.RUNNING.value, TaskStatus.TESTING.value, TaskStatus.REVIEW.value} for status in statuses):
             status = "RUNNING"
         elif task_ids:
@@ -186,6 +188,39 @@ class UniversalExecutionLedger:
             ran += 1
         refreshed = self.refresh(execution_id)
         refreshed.evidence["runner"] = {"ran": ran, "skipped": skipped, "updated_at": now_iso()}
+        self._persist(refreshed)
+        return refreshed
+
+    def recover_failed_steps(self, execution_id: str, *, max_tasks: int | None = None) -> UniversalExecutionRecord:
+        """Requeue failed universal tasks when retry budget remains; escalate exhausted tasks."""
+        record = self.refresh(execution_id)
+        recovered: list[dict[str, Any]] = []
+        escalated: list[dict[str, Any]] = []
+        inspected = 0
+        for task_id in record.task_ids:
+            if max_tasks is not None and inspected >= max_tasks:
+                break
+            task = self.tasks.load(task_id)
+            if task.status != TaskStatus.FAILED:
+                continue
+            inspected += 1
+            if task.retry_count < task.max_retries:
+                task.retry_count += 1
+                task.status = TaskStatus.QUEUED
+                prior_result = task.result
+                task.result = ""
+                task.record("retry", "Universal recovery requeued failed task", retry_count=task.retry_count, previous_result=prior_result)
+                self.tasks.save(task)
+                recovered.append({"task_id": task_id, "retry_count": task.retry_count, "max_retries": task.max_retries})
+            else:
+                task.status = TaskStatus.ESCALATED
+                task.record("escalate", "Retry budget exhausted; operator review required", retry_count=task.retry_count, max_retries=task.max_retries)
+                self.tasks.save(task)
+                escalated.append({"task_id": task_id, "retry_count": task.retry_count, "max_retries": task.max_retries})
+        refreshed = self.refresh(execution_id)
+        refreshed.evidence["recovery"] = {"requeued": recovered, "escalated": escalated, "updated_at": now_iso()}
+        if escalated:
+            refreshed.status = "ESCALATED"
         self._persist(refreshed)
         return refreshed
 

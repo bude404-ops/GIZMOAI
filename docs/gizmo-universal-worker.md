@@ -8,7 +8,7 @@ Creator request -> intent classification -> task decomposition -> capability dis
 
 Safe executable requests also pass through an execution ledger:
 
-route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> evidence -> refreshable execution record.
+route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> recovery/escalation -> evidence -> refreshable execution record.
 
 ## Capability Registry
 
@@ -106,6 +106,7 @@ The proof covers:
 - execution ledger handoff from universal route to traceable task IDs
 - dependency-aware execution runner advancing ready steps only
 - approval release from gated execution into queued task chain
+- failure recovery that requeues retryable failed steps and escalates exhausted tasks
 
 ## Execution Handoff
 
@@ -120,6 +121,13 @@ Advance queued execution steps through the safe bootstrap executor:
 ```bash
 python -m gizmo.core.cli universal-run --max-steps 1
 python -m gizmo.core.cli universal-run --execution-id <execution_id>
+```
+
+Recover failed universal steps within their retry budget:
+
+```bash
+python -m gizmo.core.cli universal-recover
+python -m gizmo.core.cli universal-recover --execution-id <execution_id> --max-steps 1
 ```
 
 Release a gated universal execution after explicit approval:
@@ -141,5 +149,8 @@ The result includes an `execution` record with:
 - verification evidence
 - runner evidence showing how many ready steps advanced and what remained blocked/skipped
 - approval request and release evidence for gated executions
+- recovery evidence showing requeued and escalated task IDs
 
 Approval-required requests create a ledger and approval request but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action. Approval release creates the task chain; it does not run unless `--run-after-approval` is explicitly used.
+
+Failed steps are not hidden. `universal-recover` requeues failures while retry budget remains, clears stale results, records retry evidence, and marks exhausted tasks `ESCALATED` for operator review.

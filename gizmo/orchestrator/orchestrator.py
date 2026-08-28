@@ -137,6 +137,17 @@ class GizmoOrchestrator:
         self.audit.log("agent-01", None, "universal.run", refreshed.status, execution_id=refreshed.execution_id, ran=refreshed.evidence.get("runner", {}).get("ran", 0))
         return result
 
+    def recover_universal_execution(self, execution_id: str | None = None, *, max_tasks: int | None = None) -> dict[str, Any]:
+        """Requeue failed universal execution tasks within their retry budget."""
+        record = self.universal_execution.latest() if execution_id is None else self.universal_execution.refresh(execution_id)
+        if record is None:
+            return {"ready": False, "status": "NO_EXECUTION", "message": "No universal execution record exists."}
+        recovered = self.universal_execution.recover_failed_steps(record.execution_id, max_tasks=max_tasks)
+        result = {"ready": True, "execution": recovered.to_dict()}
+        self.store.write(result, "universal", "latest_recovery_result.json")
+        self.audit.log("agent-01", None, "universal.recover", recovered.status, execution_id=recovered.execution_id, recovery=recovered.evidence.get("recovery", {}))
+        return result
+
     def approve_universal_execution(self, approval_id: str, approval_code: str, *, run: bool = False) -> dict[str, Any]:
         """Approve a waiting universal execution and release its planned steps into tasks."""
         record = self.universal_execution.find_by_approval(approval_id)
@@ -175,6 +186,7 @@ class GizmoOrchestrator:
             "execution_ledger": bool(self.universal_route("Build a small verified automation script.", execute=True)["execution"]["task_ids"]),
             "execution_runner": self._acceptance_runner_check(),
             "approval_release": self._acceptance_approval_release_check(),
+            "failure_recovery": self._acceptance_failure_recovery_check(),
             "unknown_problem_research": routes["unknown"]["plan"]["classification"]["needs_research"],
             "trading_not_central": "trading" in [cap["name"] for cap in self.capabilities.export_status()["capabilities"]],
         }
@@ -195,6 +207,17 @@ class GizmoOrchestrator:
             return False
         released = self.approve_universal_execution(approval["id"], approval["approval_code"])["execution"]
         return released["status"] == "QUEUED" and bool(released["task_ids"]) and released["evidence"].get("approval_decision") == "APPROVED"
+
+    def _acceptance_failure_recovery_check(self) -> bool:
+        route = self.universal_route("Build a tiny recovery smoke test.", execute=True)
+        execution = route["execution"]
+        task = self.tasks.load(execution["task_ids"][0])
+        task.status = TaskStatus.FAILED
+        task.result = "simulated smoke failure"
+        self.tasks.save(task)
+        recovered = self.recover_universal_execution(execution["execution_id"])["execution"]
+        first = self.tasks.load(execution["task_ids"][0])
+        return recovered["status"] == "QUEUED" and first.status == TaskStatus.QUEUED and first.retry_count == 1 and bool(recovered["evidence"]["recovery"]["requeued"])
 
     @staticmethod
     def _infer_generation_modality(request: str) -> str:

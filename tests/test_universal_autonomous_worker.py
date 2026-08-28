@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from gizmo.core.models import TaskStatus
 from gizmo.orchestrator.orchestrator import GizmoOrchestrator
 from gizmo.research.internet_research import InternetResearchPipeline, ResearchSource
 
@@ -16,6 +17,8 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["generation_manifest"] is True
     assert result["checks"]["memory_retrieval_planned"] is True
     assert result["checks"]["execution_ledger"] is True
+    assert result["checks"]["approval_release"] is True
+    assert result["checks"]["failure_recovery"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -151,3 +154,38 @@ def test_universal_approval_release_can_run_after_approval(tmp_path):
     released = orchestrator.approve_universal_execution(approval["id"], approval["approval_code"], run=True)
     assert released["execution"]["status"] == "QUEUED"
     assert released["run"]["execution"]["status"] == "COMPLETED"
+
+
+def test_universal_recovery_requeues_failed_task(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution = result["execution"]
+    task = orchestrator.tasks.load(execution["task_ids"][0])
+    task.status = TaskStatus.FAILED
+    task.result = "simulated failure"
+    orchestrator.tasks.save(task)
+
+    recovered = orchestrator.recover_universal_execution(execution["execution_id"])["execution"]
+    retried = orchestrator.tasks.load(execution["task_ids"][0])
+    assert recovered["status"] == "QUEUED"
+    assert recovered["evidence"]["recovery"]["requeued"][0]["task_id"] == retried.id
+    assert retried.status == TaskStatus.QUEUED
+    assert retried.retry_count == 1
+    assert retried.result == ""
+
+
+def test_universal_recovery_escalates_exhausted_retry_budget(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    result = orchestrator.universal_route("Build a small verified automation script.", execute=True)
+    execution = result["execution"]
+    task = orchestrator.tasks.load(execution["task_ids"][0])
+    task.status = TaskStatus.FAILED
+    task.retry_count = task.max_retries
+    task.result = "still broken"
+    orchestrator.tasks.save(task)
+
+    recovered = orchestrator.recover_universal_execution(execution["execution_id"])["execution"]
+    escalated = orchestrator.tasks.load(execution["task_ids"][0])
+    assert recovered["status"] == "ESCALATED"
+    assert recovered["evidence"]["recovery"]["escalated"][0]["task_id"] == escalated.id
+    assert escalated.status == TaskStatus.ESCALATED
