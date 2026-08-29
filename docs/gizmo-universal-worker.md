@@ -8,7 +8,7 @@ Creator request -> intent classification -> task decomposition -> capability dis
 
 Safe executable requests also pass through an execution ledger:
 
-route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> checkpoint/rollback -> pause/resume -> recovery/escalation/cancellation -> outcome evaluation -> failure-pattern learning -> long-horizon progress evaluation -> strategic campaign planning -> campaign milestone tracking -> autonomous goal selection -> health report -> evidence -> refreshable execution record.
+route plan -> task IDs or approval request -> dependency chain -> approval release -> step status -> safe runner -> checkpoint/rollback -> pause/resume -> recovery/escalation/cancellation -> outcome evaluation -> failure-pattern learning -> long-horizon progress evaluation -> strategic campaign planning -> campaign milestone tracking -> important Telegram event reporting -> autonomous goal selection -> health report -> evidence -> refreshable execution record.
 
 ## Capability Registry
 
@@ -117,6 +117,7 @@ The proof covers:
 - long-horizon progress evaluation that judges whether autonomy is advancing, mixed, or stalled across cycles
 - strategic campaign planning that turns verdicts and goals into milestones, success metrics, risks, and route-ready objectives
 - campaign milestone tracking that judges evidence, updates milestone status, and emits the next active objective
+- important Telegram event reporting that alerts the owner for stalled progress, blocked campaigns, approval needs, high-risk health, and severe learned failures
 
 ## Execution Handoff
 
@@ -157,6 +158,7 @@ python -m gizmo.core.cli autonomous-learn-failures --min-occurrences 1
 python -m gizmo.core.cli autonomous-progress --cycles 5
 python -m gizmo.core.cli autonomous-strategy --horizon "next 3 cycles" --route
 python -m gizmo.core.cli autonomous-track-campaign --route
+python -m gizmo.core.cli telegram-important-events --chat-id <telegram_chat_id>
 python -m gizmo.core.cli autonomous-goal --route
 ```
 
@@ -204,6 +206,7 @@ The result includes an `execution` record with:
 - progress evaluations showing long-horizon verdict, score, trend, blockers, strategic gaps, signals, and memory ID
 - strategic campaigns showing thesis, milestones, risks, success metrics, next objective, memory ID, and optional routed plan
 - campaign tracking reports showing milestone verdicts, evidence found, missing evidence, active milestone, next objective, and memory ID
+- important Telegram event reports showing queued, sent/planned, skipped duplicate, and priority-filtered owner alerts
 
 Approval-required requests create a ledger and approval request but no task IDs. Their status remains `WAITING_APPROVAL` until the operator approves the action. Approval release creates the task chain; it does not run unless `--run-after-approval` is explicitly used.
 
@@ -224,6 +227,8 @@ Unfinished work can also be held without ending it. `universal-pause` moves queu
 `autonomous-strategy` is the campaign planner. It turns progress verdicts and selected goals into a multi-step campaign with milestones, success criteria, evidence requirements, risks, and a route-ready next objective.
 
 `autonomous-track-campaign` is the campaign tracker. It checks each milestone against current health, progress, route, run, outcome, goal, and learning evidence; updates milestone status; records a tracking verdict; and pushes blocked or evidence-hungry milestones back into goal selection.
+
+`telegram-important-events` and `/important` report only high-signal events to the owner: stalled or mixed progress, blocked or evidence-hungry campaign milestones, approval-gated goals, high-risk universal worker health, and high-severity learned failure rules. Alerts are deduped unless forced. Live sending requires an explicit send path and Telegram credentials.
 
 `autonomous-goal` is the first self-directed goal loop. It reads campaign tracking reports, strategic campaigns, progress evaluations, health, the latest outcome verdict, learned failure rules, agent-body next actions, autonomous thinker upgrades, and chosen ideas, then records the highest-scoring next objective. With `--route`, it creates a universal plan for the selected goal without needing the operator to name the next step.
 

@@ -18,6 +18,7 @@ from gizmo.ideas.autonomous_thinker import AutonomousThinker
 from gizmo.knowledge.universal_sources import KnowledgeSource, UniversalKnowledgeIngestor
 from gizmo.telegram.bot import TelegramBotRuntime
 from gizmo.telegram.config import TelegramConfig
+from gizmo.telegram.important_events import ImportantTelegramEventReporter
 from gizmo.telegram.router import TelegramCommandRouter
 from gizmo.telegram.security import TelegramAuthorizer
 
@@ -28,11 +29,13 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-route", "universal-execute", "universal-run", "universal-recover", "universal-cancel", "universal-checkpoint", "universal-rollback", "universal-evaluate", "universal-pause", "universal-resume", "universal-health", "universal-approve", "universal-acceptance", "universal-learn", "app-factory-cycle", "autonomous-think", "autonomous-goal", "autonomous-learn-failures", "autonomous-progress", "autonomous-strategy", "autonomous-track-campaign", "prototype-cycle", "cloud-vault-sync", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "telegram-important-events", "cloud-brain-cycle", "super-brain-cycle", "universal-route", "universal-execute", "universal-run", "universal-recover", "universal-cancel", "universal-checkpoint", "universal-rollback", "universal-evaluate", "universal-pause", "universal-resume", "universal-health", "universal-approve", "universal-acceptance", "universal-learn", "app-factory-cycle", "autonomous-think", "autonomous-goal", "autonomous-learn-failures", "autonomous-progress", "autonomous-strategy", "autonomous-track-campaign", "prototype-cycle", "cloud-vault-sync", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     parser.add_argument("--user-id", default="1")
     parser.add_argument("--chat-id", default="1")
+    parser.add_argument("--send", action="store_true")
+    parser.add_argument("--force-notify", action="store_true")
     parser.add_argument("--text", default="/status")
     parser.add_argument("--duration-seconds", type=int, default=3300)
     parser.add_argument("--poll-timeout", type=int, default=25)
@@ -159,6 +162,11 @@ def main() -> None:
         emit(report.to_dict())
     elif args.command == "cloud-vault-sync":
         report = CloudMemoryVault(orchestrator.brain_core, orchestrator.store).sync()
+        emit(report.to_dict())
+    elif args.command == "telegram-important-events":
+        config = TelegramConfig.from_env()
+        control = TelegramControlLayer(orchestrator, config=config)
+        report = ImportantTelegramEventReporter(orchestrator.store, control.notifier).report(chat_id=args.chat_id, execute=args.send, force=args.force_notify)
         emit(report.to_dict())
     elif args.command == "telegram-poll-once":
         config = TelegramConfig.from_env()

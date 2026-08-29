@@ -31,6 +31,7 @@ class TelegramConfig:
     github_token_available: bool = False
     notification_min_priority: str = "NORMAL"
     daily_report_enabled: bool = False
+    important_events_enabled: bool = True
 
     @classmethod
     def from_env(cls) -> "TelegramConfig":
@@ -47,6 +48,7 @@ class TelegramConfig:
             github_token_available=bool(os.environ.get("GITHUB_TOKEN")),
             notification_min_priority=os.environ.get("GIZMO_NOTIFICATION_MIN_PRIORITY", "NORMAL"),
             daily_report_enabled=os.environ.get("GIZMO_DAILY_REPORT", "false").lower() in {"1", "true", "yes", "on"},
+            important_events_enabled=os.environ.get("GIZMO_IMPORTANT_EVENTS", "true").lower() in {"1", "true", "yes", "on"},
         )
 
     def validate_runtime(self) -> dict[str, Any]:

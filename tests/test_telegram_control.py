@@ -115,3 +115,91 @@ def test_end_to_end_telegram_reaper_agent_github_memory_result(tmp_path: Path):
     assert execution["status"] == "QUEUED"
     assert orchestrator.store.path("telegram", "task_results", f"{result.task['task_id']}.json").exists()
     assert orchestrator.store.read("telegram", "notifications.json")
+
+
+
+def test_important_events_command_reports_high_signal_cycle(tmp_path: Path):
+    orchestrator, router = make_router(tmp_path)
+    orchestrator.store.write({
+        "cycle_id": "cycle-important-test",
+        "status": "COMPLETED",
+        "progress_evaluation": {
+            "evaluation_id": "progress-important-test",
+            "verdict": "STALLED",
+            "score": 0.31,
+            "trend": "DECLINING",
+            "next_actions": ["Clear blocked campaign milestone"],
+        },
+        "campaign_tracking": {
+            "tracking_id": "tracking-important-test",
+            "campaign_id": "campaign-important-test",
+            "verdict": "BLOCKED",
+            "score": 0.2,
+            "next_objective": "Produce missing evidence",
+        },
+    }, "cloud", "brain_latest.json")
+    result = router.route_text("101", "201", "/important")
+    assert result.ok is True
+    assert result.priority == "IMPORTANT"
+    assert "IMPORTANT EVENTS" in result.message
+    assert "Autonomous progress is STALLED" in result.message
+    report = result.actions[0]["data"]
+    assert report["events"]
+    assert report["queued"]
+    assert orchestrator.store.read("telegram", "important_event_keys.json")
+
+
+def test_important_events_are_deduped_unless_forced(tmp_path: Path):
+    orchestrator, router = make_router(tmp_path)
+    orchestrator.store.write({
+        "cycle_id": "cycle-dedupe-test",
+        "status": "COMPLETED",
+        "progress_evaluation": {
+            "evaluation_id": "progress-dedupe-test",
+            "verdict": "MIXED_PROGRESS",
+            "score": 0.55,
+            "trend": "FLAT",
+            "next_actions": ["Tighten campaign evidence"],
+        },
+    }, "cloud", "brain_latest.json")
+    first = router.route_text("101", "201", "/important")
+    second = router.route_text("101", "201", "/important")
+    forced = router.route_text("101", "201", "/important force")
+    assert len(first.actions[0]["data"]["queued"]) == 1
+    assert len(second.actions[0]["data"]["queued"]) == 0
+    assert len(second.actions[0]["data"]["skipped"]) == 1
+    assert len(forced.actions[0]["data"]["queued"]) == 1
+
+
+def test_cloud_brain_cycle_collects_important_events(tmp_path: Path):
+    orchestrator, router = make_router(tmp_path)
+    result = router.route_text("101", "201", "start cloud brain")
+    assert result.ok is True
+    cycle = result.actions[0]["data"]
+    assert "important_events" in cycle
+    assert "Important events:" in result.message
+
+
+def test_telegram_important_events_cli(tmp_path: Path):
+    import json
+    import subprocess
+    import sys
+
+    workspace = str(tmp_path / "cli-important-events")
+    seed = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "autonomous-progress", "--workspace", workspace, "--cycles", "2"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert json.loads(seed.stdout)["ready"] is True
+    report = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "telegram-important-events", "--workspace", workspace, "--chat-id", "201"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    data = json.loads(report.stdout)
+    assert data["report_id"].startswith("important-events-")
+    assert data["chat_id"] == "201"
+    assert isinstance(data["events"], list)

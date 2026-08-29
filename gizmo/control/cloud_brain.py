@@ -18,6 +18,7 @@ from gizmo.control.agent_body import AlwaysOnAgentBody
 from gizmo.core.models import now_iso
 from gizmo.ideas.autonomous_thinker import AutonomousThinker
 from gizmo.knowledge.universal_sources import UniversalKnowledgeIngestor
+from gizmo.telegram.important_events import ImportantTelegramEventReporter
 
 
 SWARM_AGENTS = [
@@ -75,6 +76,7 @@ class CloudBrainCycle:
     strategic_campaign: dict[str, Any] = field(default_factory=dict)
     campaign_tracking: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
+    important_events: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -95,6 +97,7 @@ class CloudAutonomousBrainRunner:
         self.thinker = AutonomousThinker(self.brain, self.store)
         self.prototyper = SafeMiniAppPrototyper(self.brain, self.store)
         self.cloud_vault = CloudMemoryVault(self.brain, self.store)
+        self.important_event_reporter = ImportantTelegramEventReporter(self.store, notifier) if notifier else None
 
     def enable(self, *, chat_id: str = "", source: str = "cloud") -> dict[str, Any]:
         state = {
@@ -228,6 +231,8 @@ class CloudAutonomousBrainRunner:
         cycle.status = "COMPLETED"
         cycle.snapshot = self._snapshot(cycle)
         cycle.notification = self._format_complete(cycle)
+        if chat_id and self.important_event_reporter:
+            cycle.important_events = self.important_event_reporter.report(chat_id=str(chat_id), cycle=cycle.to_dict(), execute=False).to_dict()
         self._persist(cycle)
         if chat_id and self.notifier:
             self.notifier.queue(chat_id, cycle.notification, "IMPORTANT")
@@ -269,6 +274,7 @@ class CloudAutonomousBrainRunner:
             "progress_score": cycle.progress_evaluation.get("score"),
             "strategic_campaign_id": cycle.strategic_campaign.get("campaign_id"),
             "campaign_tracking_verdict": cycle.campaign_tracking.get("verdict"),
+            "important_events": len(cycle.important_events.get("events", [])) if isinstance(cycle.important_events, dict) else 0,
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }
@@ -317,5 +323,6 @@ class CloudAutonomousBrainRunner:
             f"Cloud vault notes: {cycle.cloud_vault.get('markdown_notes', 0)}\n"
             f"Cloud vault restore-ready: {cycle.cloud_vault.get('restore_ready', False)}\n"
             f"Universal capabilities: {cycle.universal_worker.get('capability_status', {}).get('total', 0)}\n"
+            f"Important events: {len(cycle.important_events.get('events', [])) if isinstance(cycle.important_events, dict) else 0}\n"
             "Storage: persisted + snapshotted"
         )

@@ -18,6 +18,7 @@ from gizmo.github.api_adapter import GitHubApiAdapter
 from gizmo.telegram.config import TelegramConfig
 from gizmo.telegram.intents import TelegramIntent
 from gizmo.telegram.notifier import TelegramNotifier
+from gizmo.telegram.important_events import ImportantTelegramEventReporter
 from gizmo.telegram.router import TelegramTaskEnvelope
 
 
@@ -35,6 +36,7 @@ class TelegramControlLayer:
         self.thinker = AutonomousThinker(orchestrator.brain_core, orchestrator.store)
         self.prototyper = SafeMiniAppPrototyper(orchestrator.brain_core, orchestrator.store)
         self.cloud_vault = CloudMemoryVault(orchestrator.brain_core, orchestrator.store)
+        self.important_events = ImportantTelegramEventReporter(orchestrator.store, self.notifier)
 
     def handle_telegram_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         handlers = {
@@ -57,6 +59,7 @@ class TelegramControlLayer:
             "autonomous_think": self._autonomous_think,
             "prototype": self._prototype,
             "cloud_vault": self._cloud_vault,
+            "important_events": self._important_events,
             "memory": self._memory,
             "remember": self._remember,
             "logs": self._logs,
@@ -79,7 +82,7 @@ class TelegramControlLayer:
         return {"ok": True, "message": "🧠 GIZMO ONLINE\nTelegram Control Center is ready. Use /help or tell me what to build.", "task_status": "COMPLETED"}
 
     def _help(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
-        commands = "/status /agents /projects /tasks /task /run /pause /resume /stop /autonomous /learn /memory /remember /logs /build /test /deploy /approve /deny /restart"
+        commands = "/status /agents /projects /tasks /task /run /pause /resume /stop /autonomous /learn /memory /remember /logs /build /test /deploy /approve /deny /restart /important"
         return {"ok": True, "message": f"🧠 Commands\n{commands}\n\nNatural language works too: Build a new research agent that learns from previous research.", "task_status": "COMPLETED"}
 
     def _status(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
@@ -249,6 +252,19 @@ class TelegramControlLayer:
             "priority": "IMPORTANT",
             "actions": [{"type": "cloud_vault", "data": report.to_dict()}],
         }
+
+
+    def _important_events(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        raw = (intent.args.get("raw_args") or intent.objective or "").lower()
+        force = "force" in raw or "again" in raw
+        execute = "send" in raw or "now" in raw or "force" in raw
+        report = self.important_events.report(chat_id=envelope.chat_id, execute=execute, force=force)
+        if not report.events:
+            message = "⚪ IMPORTANT EVENTS\nNo high-signal autonomous events are waiting."
+        else:
+            lines = [f"• {item['priority']}: {item['title']}" for item in report.events[:6]]
+            message = "⚠️ IMPORTANT EVENTS\n" + "\n".join(lines) + f"\nQueued: {len(report.queued)} / Skipped duplicates: {len(report.skipped)}"
+        return {"ok": True, "message": message, "task_status": "COMPLETED", "priority": "IMPORTANT" if report.events else "NORMAL", "actions": [{"type": "important_events", "data": report.to_dict()}]}
 
     def _memory(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         query = intent.args.get("query") or intent.objective or "Gizmo"
