@@ -90,6 +90,7 @@ class AutonomousGoalLoop:
             "failure_learning": self.store.read("learning", "latest_failure_learning.json", default={}),
             "progress": self.store.read("progress", "latest_progress_evaluation.json", default={}),
             "campaign": self.store.read("strategy", "latest_campaign.json", default={}),
+            "campaign_tracking": self.store.read("strategy", "latest_tracking.json", default={}),
         }
 
     def _build_candidates(self, context: dict[str, Any]) -> list[AutonomousGoalCandidate]:
@@ -98,6 +99,21 @@ class AutonomousGoalLoop:
         outcome = context.get("outcome") or {}
         progress = context.get("progress") or {}
         campaign = context.get("campaign") or {}
+        tracking = context.get("campaign_tracking") or {}
+        if tracking and tracking.get("verdict") in {"BLOCKED", "NEEDS_EVIDENCE"}:
+            candidates.append(self._candidate(
+                objective=f"Unblock strategic campaign tracking: {tracking.get('next_objective', 'active campaign milestone')}",
+                lane="campaign-tracking",
+                source="campaign-tracker",
+                reason=f"Campaign tracking verdict is {tracking.get('verdict')} at score {tracking.get('score')}; active milestone needs evidence before strategy can advance.",
+                urgency=0.74 if tracking.get("verdict") == "BLOCKED" else 0.64,
+                value=0.88,
+                confidence=0.78,
+                risk=0.14,
+                evidence=[str(tracking.get("tracking_id", "tracking")), str(tracking.get("campaign_id", "campaign"))],
+                recommended_command="autonomous-track-campaign",
+            ))
+
         if campaign and campaign.get("milestones"):
             open_milestone = next((item for item in campaign.get("milestones", []) if item.get("status") == "PLANNED"), campaign.get("milestones", [])[0])
             candidates.append(self._candidate(

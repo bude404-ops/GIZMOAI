@@ -73,6 +73,7 @@ class CloudBrainCycle:
     autonomous_goal: dict[str, Any] = field(default_factory=dict)
     progress_evaluation: dict[str, Any] = field(default_factory=dict)
     strategic_campaign: dict[str, Any] = field(default_factory=dict)
+    campaign_tracking: dict[str, Any] = field(default_factory=dict)
     notification: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -162,6 +163,9 @@ class CloudAutonomousBrainRunner:
         cycle.strategic_campaign = self.orchestrator.autonomous_strategy_cycle(route=True, execute=False)["campaign"]
         if cycle.strategic_campaign.get("memory_id"):
             cycle.memories_created.append(cycle.strategic_campaign["memory_id"])
+        cycle.campaign_tracking = self.orchestrator.autonomous_campaign_tracking_cycle(route=True, execute=False)["tracking"]
+        if cycle.campaign_tracking.get("memory_id"):
+            cycle.memories_created.append(cycle.campaign_tracking["memory_id"])
         cycle.memories_created.extend(thinking.memories_created)
         prototype_report = self.prototyper.run(limit=3, allow_publish=False)
         cycle.prototypes = prototype_report.to_dict()
@@ -264,6 +268,7 @@ class CloudAutonomousBrainRunner:
             "progress_verdict": cycle.progress_evaluation.get("verdict"),
             "progress_score": cycle.progress_evaluation.get("score"),
             "strategic_campaign_id": cycle.strategic_campaign.get("campaign_id"),
+            "campaign_tracking_verdict": cycle.campaign_tracking.get("verdict"),
             "vault_report": cycle.vault_report,
             "collective_counts": {k: len(v) if isinstance(v, list) else v for k, v in collective.items()},
         }

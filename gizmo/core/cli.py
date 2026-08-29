@@ -28,7 +28,7 @@ def emit(data: dict) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="GIZMO — Autonomous Intelligence & Development Organization")
-    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-route", "universal-execute", "universal-run", "universal-recover", "universal-cancel", "universal-checkpoint", "universal-rollback", "universal-evaluate", "universal-pause", "universal-resume", "universal-health", "universal-approve", "universal-acceptance", "universal-learn", "app-factory-cycle", "autonomous-think", "autonomous-goal", "autonomous-learn-failures", "autonomous-progress", "autonomous-strategy", "prototype-cycle", "cloud-vault-sync", "status", "stop"])
+    parser.add_argument("command", choices=["bootstrap", "self-test", "github-demo", "github-api-demo", "policy-demo", "second-brain-demo", "brain-init", "brain-phase2", "brain-phase3", "brain-phase4", "telegram-demo", "telegram-autonomous-cycle", "telegram-poll-once", "telegram-poll-loop", "cloud-brain-cycle", "super-brain-cycle", "universal-route", "universal-execute", "universal-run", "universal-recover", "universal-cancel", "universal-checkpoint", "universal-rollback", "universal-evaluate", "universal-pause", "universal-resume", "universal-health", "universal-approve", "universal-acceptance", "universal-learn", "app-factory-cycle", "autonomous-think", "autonomous-goal", "autonomous-learn-failures", "autonomous-progress", "autonomous-strategy", "autonomous-track-campaign", "prototype-cycle", "cloud-vault-sync", "status", "stop"])
     parser.add_argument("--workspace", default=str(Path(".gizmo_runtime")))
     parser.add_argument("--comment", default="/gizmo status")
     parser.add_argument("--user-id", default="1")
@@ -54,6 +54,7 @@ def main() -> None:
     parser.add_argument("--min-occurrences", type=int, default=1)
     parser.add_argument("--cycles", type=int, default=5)
     parser.add_argument("--horizon", default="next 3 cycles")
+    parser.add_argument("--campaign-id", default=None)
     args = parser.parse_args()
     orchestrator = GizmoOrchestrator(args.workspace)
     if args.command == "bootstrap":
@@ -151,6 +152,8 @@ def main() -> None:
         emit(orchestrator.autonomous_progress_cycle(cycles=args.cycles))
     elif args.command == "autonomous-strategy":
         emit(orchestrator.autonomous_strategy_cycle(horizon=args.horizon, route=args.route, execute=args.execute))
+    elif args.command == "autonomous-track-campaign":
+        emit(orchestrator.autonomous_campaign_tracking_cycle(campaign_id=args.campaign_id, route=args.route, execute=args.execute))
     elif args.command == "prototype-cycle":
         report = SafeMiniAppPrototyper(orchestrator.brain_core, orchestrator.store).run(limit=3, allow_publish=False)
         emit(report.to_dict())

@@ -28,6 +28,7 @@ def test_universal_acceptance_paths(tmp_path):
     assert result["checks"]["failure_learning"] is True
     assert result["checks"]["long_horizon_progress"] is True
     assert result["checks"]["strategic_campaign"] is True
+    assert result["checks"]["campaign_tracking"] is True
     assert result["checks"]["unknown_problem_research"] is True
     assert result["checks"]["trading_not_central"] is True
 
@@ -689,3 +690,83 @@ def test_autonomous_strategy_cli(tmp_path):
     assert data["ready"] is True
     assert data["campaign"]["memory_id"]
     assert data["campaign"]["routed_plan"]["ready"] is True
+
+
+
+def test_autonomous_campaign_tracker_updates_milestones_and_routes(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    orchestrator.store.write({
+        "evaluation_id": "progress-tracking-test",
+        "verdict": "MIXED_PROGRESS",
+        "score": 0.52,
+        "confidence": 0.8,
+        "trend": "FLAT",
+        "strategic_gaps": ["Campaign needs evidence-linked milestones"],
+        "blockers": [],
+        "next_actions": ["Track active campaign milestone"],
+    }, "progress", "latest_progress_evaluation.json")
+    orchestrator.autonomous_goal_cycle()
+    campaign = orchestrator.autonomous_strategy_cycle(route=True)["campaign"]
+    tracking = orchestrator.autonomous_campaign_tracking_cycle(route=True)["tracking"]
+    assert tracking["campaign_id"] == campaign["campaign_id"]
+    assert tracking["tracking_id"].startswith("tracking-")
+    assert tracking["memory_id"]
+    assert tracking["verdict"] in {"CAMPAIGN_COMPLETE", "ADVANCING", "NEEDS_EVIDENCE", "BLOCKED"}
+    assert tracking["assessments"]
+    assert tracking["next_objective"]
+    stored = orchestrator.store.read("strategy", "latest_campaign.json")
+    assert stored["tracking"]["tracking_id"] == tracking["tracking_id"]
+    assert "last_verdict" in stored["milestones"][0]
+
+
+def test_campaign_tracker_influences_goal_loop_when_evidence_missing(tmp_path):
+    orchestrator = GizmoOrchestrator(tmp_path)
+    orchestrator.store.write({
+        "campaign_id": "campaign-test",
+        "created_at": "now",
+        "thesis": "Force evidence for campaign tracking.",
+        "horizon": "next cycle",
+        "selected_goal": {"objective": "prove campaign tracking", "lane": "strategy"},
+        "progress_context": {"verdict": "STALLED", "score": 0.3},
+        "milestones": [{
+            "id": "milestone-test",
+            "objective": "Produce explicit missing evidence",
+            "lane": "gap-closure",
+            "success_criteria": ["evidence exists"],
+            "evidence_required": ["custom impossible evidence marker"],
+            "status": "IN_PROGRESS",
+            "depends_on": [],
+        }],
+        "risks": [],
+        "success_metrics": [],
+        "next_objective": "Produce explicit missing evidence",
+    }, "strategy", "latest_campaign.json")
+    tracking = orchestrator.autonomous_campaign_tracking_cycle()["tracking"]
+    assert tracking["verdict"] in {"BLOCKED", "NEEDS_EVIDENCE"}
+    decision = orchestrator.autonomous_goal_cycle()["decision"]
+    assert any(candidate["source"] == "campaign-tracker" for candidate in decision["candidates"])
+
+
+def test_autonomous_campaign_tracker_cli(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    workspace = str(tmp_path / "cli-campaign-tracker")
+    strategy = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "autonomous-strategy", "--workspace", workspace, "--route"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    assert json.loads(strategy.stdout)["ready"] is True
+    tracking = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "autonomous-track-campaign", "--workspace", workspace, "--route"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    data = json.loads(tracking.stdout)
+    assert data["ready"] is True
+    assert data["tracking"]["memory_id"]
+    assert data["tracking"]["assessments"]
