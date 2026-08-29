@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from gizmo.core.models import now_iso
+from gizmo.telegram.alert_preferences import TelegramAlertPreferenceStore
 
 
 @dataclass
@@ -37,6 +38,7 @@ class ImportantEventReport:
     events: list[dict[str, Any]]
     queued: list[dict[str, Any]]
     skipped: list[dict[str, Any]]
+    preferences: dict[str, Any] = field(default_factory=dict)
     execute: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -51,6 +53,7 @@ class ImportantTelegramEventReporter:
     def __init__(self, store: Any, notifier: Any) -> None:
         self.store = store
         self.notifier = notifier
+        self.preferences = TelegramAlertPreferenceStore(store)
 
     def report(self, *, chat_id: str, cycle: dict[str, Any] | None = None, execute: bool = False, force: bool = False) -> ImportantEventReport:
         cycle_data = cycle or self.store.read("cloud", "brain_latest.json", default={}) or {}
@@ -58,7 +61,12 @@ class ImportantTelegramEventReporter:
         queued = []
         skipped = []
         seen = set(self.store.read("telegram", "important_event_keys.json", default=[]))
+        prefs = self.preferences.load()
         for event in events:
+            allowed, reason = self.preferences.allows(event)
+            if not allowed and not force:
+                skipped.append({"event": event.to_dict(), "reason": reason})
+                continue
             if event.key in seen and not force:
                 skipped.append({"event": event.to_dict(), "reason": "duplicate"})
                 continue
@@ -73,6 +81,7 @@ class ImportantTelegramEventReporter:
             events=[event.to_dict() for event in events],
             queued=queued,
             skipped=skipped,
+            preferences=prefs.to_dict(),
             execute=execute,
         )
         self.store.write(report.to_dict(), "telegram", "important_events_latest.json")

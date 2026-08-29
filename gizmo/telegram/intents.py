@@ -7,7 +7,7 @@ from typing import Any
 COMMANDS = {
     "/start", "/help", "/status", "/agents", "/projects", "/tasks", "/task", "/run", "/stop",
     "/pause", "/resume", "/autonomous", "/learn", "/memory", "/remember", "/logs", "/build",
-    "/test", "/deploy", "/approve", "/deny", "/restart", "/important",
+    "/test", "/deploy", "/approve", "/deny", "/restart", "/important", "/alerts",
 }
 
 
@@ -111,6 +111,9 @@ class IntentDetector:
             "important": ("important_events", "Check important autonomous events", {"raw_args": "check"}, False, 0.97),
             "important events": ("important_events", "Check important autonomous events", {"raw_args": "check"}, False, 0.98),
             "what important happened": ("important_events", "Check important autonomous events", {"raw_args": "check"}, False, 0.96),
+            "alerts": ("alert_preferences", "show", {"raw_args": "show"}, False, 0.97),
+            "alert settings": ("alert_preferences", "show", {"raw_args": "show"}, False, 0.97),
+            "telegram alerts": ("alert_preferences", "show", {"raw_args": "show"}, False, 0.97),
         }
         if compact in exact:
             intent, objective, args, requires, confidence = exact[compact]
@@ -170,6 +173,7 @@ class IntentDetector:
             "/deny": ("deny", rest or "Deny action"),
             "/restart": ("restart", "Restart orchestration layer"),
             "/important": ("important_events", rest or "Check important autonomous events"),
+            "/alerts": ("alert_preferences", rest or "show"),
         }
         intent, objective = mapping.get(command, ("natural_task", raw))
         requires = intent in {"deploy", "restart", "emergency_stop", "approve", "deny"}
@@ -188,6 +192,8 @@ class IntentDetector:
             return TelegramIntent("pause", "natural", raw, confidence=0.88)
         if "resume" in lowered:
             return TelegramIntent("resume", "natural", raw, confidence=0.82)
+        if "alert" in lowered and ("setting" in lowered or "telegram" in lowered or "mute" in lowered):
+            return TelegramIntent("alert_preferences", "natural", raw, args={"raw_args": raw}, confidence=0.86)
         if "important" in lowered and ("gizmo" in lowered or "event" in lowered or "happened" in lowered):
             return TelegramIntent("important_events", "natural", raw, args={"raw_args": raw}, confidence=0.86)
         if "what did" in lowered and "learn" in lowered:

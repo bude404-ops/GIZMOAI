@@ -19,6 +19,7 @@ from gizmo.telegram.config import TelegramConfig
 from gizmo.telegram.intents import TelegramIntent
 from gizmo.telegram.notifier import TelegramNotifier
 from gizmo.telegram.important_events import ImportantTelegramEventReporter
+from gizmo.telegram.alert_preferences import TelegramAlertPreferenceStore
 from gizmo.telegram.router import TelegramTaskEnvelope
 
 
@@ -37,6 +38,7 @@ class TelegramControlLayer:
         self.prototyper = SafeMiniAppPrototyper(orchestrator.brain_core, orchestrator.store)
         self.cloud_vault = CloudMemoryVault(orchestrator.brain_core, orchestrator.store)
         self.important_events = ImportantTelegramEventReporter(orchestrator.store, self.notifier)
+        self.alert_preferences = TelegramAlertPreferenceStore(orchestrator.store)
 
     def handle_telegram_task(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         handlers = {
@@ -60,6 +62,7 @@ class TelegramControlLayer:
             "prototype": self._prototype,
             "cloud_vault": self._cloud_vault,
             "important_events": self._important_events,
+            "alert_preferences": self._alert_preferences,
             "memory": self._memory,
             "remember": self._remember,
             "logs": self._logs,
@@ -82,7 +85,7 @@ class TelegramControlLayer:
         return {"ok": True, "message": "🧠 GIZMO ONLINE\nTelegram Control Center is ready. Use /help or tell me what to build.", "task_status": "COMPLETED"}
 
     def _help(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
-        commands = "/status /agents /projects /tasks /task /run /pause /resume /stop /autonomous /learn /memory /remember /logs /build /test /deploy /approve /deny /restart /important"
+        commands = "/status /agents /projects /tasks /task /run /pause /resume /stop /autonomous /learn /memory /remember /logs /build /test /deploy /approve /deny /restart /important /alerts"
         return {"ok": True, "message": f"🧠 Commands\n{commands}\n\nNatural language works too: Build a new research agent that learns from previous research.", "task_status": "COMPLETED"}
 
     def _status(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
@@ -254,6 +257,25 @@ class TelegramControlLayer:
         }
 
 
+
+    def _alert_preferences(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
+        raw = intent.args.get("raw_args") or intent.objective or "show"
+        prefs, changes = self.alert_preferences.update_from_text(raw)
+        status = "ON" if prefs.enabled else "OFF"
+        quiet = f"ON {prefs.quiet_hours_start}:00-{prefs.quiet_hours_end}:00" if prefs.quiet_hours_enabled else "OFF"
+        message = (
+            "🔔 TELEGRAM ALERTS\n"
+            f"Status: {status}\n"
+            f"Minimum priority: {prefs.min_priority}\n"
+            f"Categories: {', '.join(prefs.categories)}\n"
+            f"Quiet hours: {quiet}\n"
+            f"Quiet allow: {', '.join(prefs.quiet_hours_allow)}"
+        )
+        if changes:
+            message += "\nUpdated: " + "; ".join(changes)
+        message += "\nUse /alerts on|off, /alerts min URGENT, /alerts only approval campaign, /alerts quiet 23-7, or /alerts reset."
+        return {"ok": True, "message": message, "task_status": "COMPLETED", "priority": "IMPORTANT", "actions": [{"type": "alert_preferences", "data": prefs.to_dict()}]}
+
     def _important_events(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:
         raw = (intent.args.get("raw_args") or intent.objective or "").lower()
         force = "force" in raw or "again" in raw
@@ -263,7 +285,7 @@ class TelegramControlLayer:
             message = "⚪ IMPORTANT EVENTS\nNo high-signal autonomous events are waiting."
         else:
             lines = [f"• {item['priority']}: {item['title']}" for item in report.events[:6]]
-            message = "⚠️ IMPORTANT EVENTS\n" + "\n".join(lines) + f"\nQueued: {len(report.queued)} / Skipped duplicates: {len(report.skipped)}"
+            message = "⚠️ IMPORTANT EVENTS\n" + "\n".join(lines) + f"\nQueued: {len(report.queued)} / Skipped: {len(report.skipped)}"
         return {"ok": True, "message": message, "task_status": "COMPLETED", "priority": "IMPORTANT" if report.events else "NORMAL", "actions": [{"type": "important_events", "data": report.to_dict()}]}
 
     def _memory(self, envelope: TelegramTaskEnvelope, intent: TelegramIntent) -> dict[str, Any]:

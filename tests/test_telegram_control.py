@@ -203,3 +203,103 @@ def test_telegram_important_events_cli(tmp_path: Path):
     assert data["report_id"].startswith("important-events-")
     assert data["chat_id"] == "201"
     assert isinstance(data["events"], list)
+
+
+
+def test_alert_preferences_command_can_mute_and_unmute(tmp_path: Path):
+    orchestrator, router = make_router(tmp_path)
+    muted = router.route_text("101", "201", "/alerts off")
+    assert muted.ok is True
+    assert "Status: OFF" in muted.message
+    prefs = orchestrator.store.read("telegram", "alert_preferences.json")
+    assert prefs["enabled"] is False
+    unmuted = router.route_text("101", "201", "/alerts on")
+    assert "Status: ON" in unmuted.message
+    assert orchestrator.store.read("telegram", "alert_preferences.json")["enabled"] is True
+
+
+def test_alert_preferences_filter_event_categories(tmp_path: Path):
+    orchestrator, router = make_router(tmp_path)
+    router.route_text("101", "201", "/alerts only approval")
+    orchestrator.store.write({
+        "cycle_id": "category-filter-test",
+        "status": "COMPLETED",
+        "progress_evaluation": {
+            "evaluation_id": "category-progress",
+            "verdict": "STALLED",
+            "score": 0.2,
+            "trend": "DECLINING",
+            "next_actions": ["blocked"],
+        },
+        "autonomous_goal": {
+            "decision_id": "category-goal",
+            "selected_goal": {"approval_required": True, "objective": "Deploy gated release"},
+        },
+    }, "cloud", "brain_latest.json")
+    result = router.route_text("101", "201", "/important")
+    report = result.actions[0]["data"]
+    queued_titles = [item["event"]["title"] for item in report["queued"]]
+    skipped_reasons = [item["reason"] for item in report["skipped"]]
+    assert queued_titles == ["Goal needs approval"]
+    assert any("category progress muted" in reason for reason in skipped_reasons)
+
+
+def test_alert_preferences_min_priority_blocks_lower_events(tmp_path: Path):
+    orchestrator, router = make_router(tmp_path)
+    router.route_text("101", "201", "/alerts min URGENT")
+    orchestrator.store.write({
+        "cycle_id": "priority-filter-test",
+        "status": "COMPLETED",
+        "progress_evaluation": {
+            "evaluation_id": "priority-progress",
+            "verdict": "MIXED_PROGRESS",
+            "score": 0.55,
+            "trend": "FLAT",
+            "next_actions": ["tighten"],
+        },
+    }, "cloud", "brain_latest.json")
+    result = router.route_text("101", "201", "/important")
+    report = result.actions[0]["data"]
+    assert len(report["queued"]) == 0
+    assert report["skipped"][0]["reason"] == "priority below URGENT"
+
+
+def test_alert_preferences_quiet_hours_hold_non_urgent_events(tmp_path: Path):
+    from gizmo.telegram.alert_preferences import TelegramAlertPreferenceStore
+    from gizmo.telegram.important_events import ImportantTelegramEventReporter
+
+    orchestrator, router = make_router(tmp_path)
+    router.route_text("101", "201", "/alerts quiet 0-23")
+    orchestrator.store.write({
+        "cycle_id": "quiet-filter-test",
+        "status": "COMPLETED",
+        "progress_evaluation": {
+            "evaluation_id": "quiet-progress",
+            "verdict": "MIXED_PROGRESS",
+            "score": 0.55,
+            "trend": "FLAT",
+            "next_actions": ["tighten"],
+        },
+    }, "cloud", "brain_latest.json")
+    reporter = ImportantTelegramEventReporter(orchestrator.store, router.control.notifier)
+    event = reporter.detect(orchestrator.store.read("cloud", "brain_latest.json"))[0]
+    allowed, reason = TelegramAlertPreferenceStore(orchestrator.store).allows(event, now_hour=5)
+    assert allowed is False
+    assert reason == "quiet hours"
+
+
+def test_telegram_alerts_cli_updates_preferences(tmp_path: Path):
+    import json
+    import subprocess
+    import sys
+
+    workspace = str(tmp_path / "cli-alerts")
+    result = subprocess.run(
+        [sys.executable, "-m", "gizmo.core.cli", "telegram-alerts", "--workspace", workspace, "--alert-setting", "only approval campaign"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    data = json.loads(result.stdout)
+    assert data["preferences"]["categories"] == ["approval", "campaign"]
+    assert data["changes"]
